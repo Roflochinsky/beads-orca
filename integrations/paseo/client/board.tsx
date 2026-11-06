@@ -3,6 +3,7 @@ import { useRpc } from "@getpaseo/plugin/client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
+import { z } from "zod";
 import { beadsRpc, projectSchema, snapshotSchema } from "../shared/rpc.js";
 import type { BeadsRequest, Issue } from "../shared/rpc.js";
 import { Button, Choices, Field, Notice, colors, styles } from "./components.js";
@@ -10,6 +11,7 @@ import { Button, Choices, Field, Notice, colors, styles } from "./components.js"
 const statuses = ["open", "in_progress", "blocked", "deferred", "closed"] as const;
 const types = ["task", "bug", "feature", "epic", "chore", "decision", "spike", "story", "milestone"] as const;
 const priorities = ["0", "1", "2", "3", "4"] as const;
+const commentSchema = z.object({ id: z.string(), author: z.string(), text: z.string(), created_at: z.string() });
 type Change = { method: BeadsRequest["method"]; input: Record<string, unknown> };
 type RunChange = (change: Change, onSuccess?: () => void) => void;
 
@@ -205,7 +207,7 @@ function IssueDetail({ issue, allIssues, hostId, project, pending, run, onClose 
   const [comment, setComment] = useState("");
   const [reason, setReason] = useState("");
   const comments = useQuery({ queryKey: ["beads", hostId, project, "comments", issue.id],
-    queryFn: () => rpc({ method: "comments", project, input: { id: issue.id } }), retry: false });
+    queryFn: async () => commentSchema.array().parse(await rpc({ method: "comments", project, input: { id: issue.id } })), retry: false });
   const dependents = allIssues.filter((item) => item.dependencies.some((dep) => dep.id === issue.id));
   if (editing) return <IssueForm issue={issue} pending={pending} run={run} onCancel={() => setEditing(false)} />;
   return <View style={styles.section}>
@@ -241,7 +243,11 @@ function IssueDetail({ issue, allIssues, hostId, project, pending, run, onClose 
     <Text accessibilityRole="header" style={styles.heading}>Comments</Text>
     {comments.isPending && <Text style={styles.caption}>Loading comments…</Text>}
     {comments.error && <Notice error>{comments.error.message}</Notice>}
-    {comments.data !== undefined && <Text selectable style={styles.text}>{Array.isArray(comments.data) && comments.data.length === 0 ? "No comments yet." : JSON.stringify(comments.data, null, 2)}</Text>}
+    {comments.data?.length === 0 && <Text style={styles.caption}>No comments yet.</Text>}
+    {comments.data?.map((entry) => <View key={entry.id} style={{ gap: 4 }}>
+      <Text style={styles.caption}>{entry.author} · {new Date(entry.created_at).toLocaleString()}</Text>
+      <Text selectable style={styles.text}>{entry.text}</Text>
+    </View>)}
     <Field label="New comment" value={comment} onChange={setComment} multiline disabled={pending} />
     <Button disabled={pending || !comment.trim()} onPress={() => run({ method: "comment", input: { id: issue.id, text: comment.trim() } }, () => setComment(""))}>Add comment</Button>
   </View>;

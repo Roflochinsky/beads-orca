@@ -49,6 +49,8 @@ npm run smoke
 
 `smoke` создаёт отдельный временный Git/Beads-проект, проверяет операции через настоящий `bd` и удаляет его. Пользовательские базы не используются.
 
+`npm run smoke:desktop` проверяет уже упакованное приложение: безопасный renderer, настоящий IPC, запись задачи и ввод поиска без потери фокуса. Снимки сохраняются в `artifacts/desktop-*.png`. В Linux нужен графический сеанс; CI использует Xvfb и настроенный Chromium sandbox, не `--no-sandbox`.
+
 Для запуска desktop из исходников сначала загрузите официальный Electron runtime:
 
 ```sh
@@ -104,13 +106,14 @@ Workflow `.github/workflows/build.yml` выполняет на Linux и macOS:
 3. Поведенческие тесты.
 4. Проверку реального временного Beads-проекта.
 5. Упаковку Linux x64 и macOS x64/arm64 приложений.
-6. Архивы плагинов, Omarchy-интеграции и контрольные суммы.
+6. Запуск упакованного приложения, операции через настоящий renderer IPC и сохранение скриншота.
+7. Архивы плагинов, Omarchy-интеграции и контрольные суммы.
 
 Push тега `v<package.json version>` публикует GitHub Release только после успеха обеих платформ. Actions закреплены на commit SHA. Репозиторий остаётся приватным; workflow не меняет его видимость и не публикует пакет в npm или публичный каталог Orca.
 
 ### Подпись macOS
 
-Без Apple credentials CI создаёт неподписанные сборки. Это не нотарифицированный публичный дистрибутив. Для подписанного релиза владелец должен настроить GitHub Actions secrets:
+Без Apple credentials сборки не имеют подписи Developer ID и notarization. Для подписанного релиза владелец должен настроить GitHub Actions secrets:
 
 - `MACOS_CERTIFICATE`: Developer ID Application сертификат в формате, поддерживаемом `CSC_LINK` electron-builder.
 - `MACOS_CERTIFICATE_PASSWORD`.

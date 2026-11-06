@@ -178,7 +178,7 @@ export function mount(root: HTMLElement, transport: Transport, options: MountOpt
   function errorBanner(): string {
     const parts = [loadError, actionError].filter(Boolean);
     const error = parts.length ? `<div class="banner" role="alert">${icon('error')}<div><strong>Could not complete the request</strong>${parts.map((part) => `<p>${escapeHtml(part)}</p>`).join('')}</div><button class="btn btn--outlined btn--sm" data-action="retry" type="button"${disabled()}>Retry loading</button><button class="btn btn--icon" data-action="dismiss-error" type="button" aria-label="Dismiss error">${icon('close')}</button></div>` : '';
-    const undo = undoClose && undoClose.project === projectId ? `<div class="banner" role="status"><div><strong>Closed ${escapeHtml(undoClose.id)}</strong><p>Undo reopens this issue if it has not changed.</p></div><button class="btn btn--outlined btn--sm" type="button" data-action="undo-close" title="${escapeHtml(actionCommand('reopen', undoClose.id))}"${disabled()}>Undo</button><button class="btn btn--icon" type="button" data-action="dismiss-undo" aria-label="Dismiss close message">${icon('close')}</button></div>` : '';
+    const undo = undoClose && undoClose.project === projectId ? `<div class="banner banner--undo" role="status"><div><strong>Closed ${escapeHtml(undoClose.id)}</strong><p>Undo reopens this issue if it has not changed.</p></div><button class="btn btn--outlined btn--sm" type="button" data-action="undo-close" title="${escapeHtml(actionCommand('reopen', undoClose.id))}"${disabled()}>Undo</button><button class="btn btn--icon" type="button" data-action="dismiss-undo" aria-label="Dismiss close message">${icon('close')}</button></div>` : '';
     return error + undo;
   }
 
@@ -679,8 +679,11 @@ export function mount(root: HTMLElement, transport: Transport, options: MountOpt
   function onInput(event: Event): void {
     const target = event.target;
     if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement)) return;
-    if (target.dataset.input === 'search') { query = target.value; render(); }
-    else if (target.dataset.input === 'draft' && target.name in draft) {
+    if (target.dataset.input === 'search') {
+      if (query === target.value) return;
+      query = target.value;
+      render();
+    } else if (target.dataset.input === 'draft' && target.name in draft) {
       draft[target.name as keyof Draft] = target.value;
       const command = root.querySelector<HTMLElement>('[data-command="create"]');
       if (command) command.textContent = createCommand(draft);

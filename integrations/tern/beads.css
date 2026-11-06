@@ -1,5 +1,8 @@
 /* Scoped to Beads: never restyle Tern's other panes or global chrome. */
-[data-surface='plugin.beads.board'] {
+.sf-main[data-surface='plugin.beads.board'],
+.sf-dock[data-surface='plugin.beads.board'] {
+  --grad: #271a00;
+  --grad-ink: #fdfbfa;
   --t1: #27251e;
   --t2: #5b5953;
   --t3: #69665f;
@@ -23,6 +26,9 @@
   color: #27251e;
   font-size: 14px;
   padding: 12px;
+}
+.sf-main[data-surface='plugin.beads.board'] {
+  overflow: auto;
 }
 [data-surface='plugin.beads.board'] [data-role='beads-column'] {
   flex: 1;

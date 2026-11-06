@@ -105,12 +105,23 @@ try {
   const persisted = JSON.parse(native('bd', ['--json', '--readonly', 'show', '--', created.id]));
   assert.equal(persisted[0].title, 'Packaged renderer write');
   await until(() => evaluate(sessionId, `document.body.innerText.includes('Packaged renderer write')`), 'Rendered persisted mutation');
+  await evaluate(sessionId, `document.querySelector('input[type="search"]').focus()`);
+  await rpc('Input.insertText', { text: 'Packaged ' }, sessionId);
+  await rpc('Input.insertText', { text: 'renderer write' }, sessionId);
+  const searched = await evaluate(sessionId, `(() => {
+    const search = document.querySelector('input[type="search"]');
+    return {query:search.value,focused:document.activeElement===search,ids:Array.from(document.querySelectorAll('.tray-row__button[data-id]'),row=>row.dataset.id)};
+  })()`);
+  assert.deepEqual(searched, { query: 'Packaged renderer write', focused: true, ids: [created.id] });
+  await evaluate(sessionId, `document.querySelector('input[type="search"]').select()`);
+  await rpc('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8 }, sessionId);
+  await rpc('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8 }, sessionId);
   await evaluate(sessionId, 'document.fonts.ready.then(() => true)');
   const capture = await rpc('Page.captureScreenshot', { format: 'png' }, sessionId);
   await mkdir('artifacts', { recursive: true });
   const screenshot = `artifacts/desktop-${process.platform}-${process.arch}.png`;
   await writeFile(screenshot, Buffer.from(capture.data, 'base64'));
-  console.log(`PASS: packaged ${process.platform}/${process.arch} startup, secure renderer, native issue, IPC write, ${observed.width}px tray and screenshot ${screenshot}`);
+  console.log(`PASS: packaged ${process.platform}/${process.arch} startup, secure renderer, native issue, IPC write, search focus, ${observed.width}px tray and screenshot ${screenshot}`);
 } catch (error) {
   console.error(log.slice(-8192));
   throw error;

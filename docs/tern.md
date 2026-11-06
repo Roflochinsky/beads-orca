@@ -57,7 +57,7 @@ Prerequisites on the machine running the panes:
 
 The root build owns staging. It must copy the package files from `integrations/tern/` to **`dist/tern/`** and bundle `src/tern/bridge.ts` as ESM to **`dist/tern/bridge.mjs`**, including the common core. No generated bridge belongs in `integrations/tern/`. There are no Tern-specific npm runtime dependencies or separate npm-link steps.
 
-After the parent/integrator has built the repository:
+Run from the repository root:
 
 ```sh
 npm run build
@@ -69,9 +69,9 @@ Alternatively, for development, explicitly authorize `tern plugin link /absolute
 
 Open a shell in the initialized project, then choose **New Beads block** in the command palette. No window entry, HTTP server, authentication token, port or browser executable is needed. If Node is not on the daemon PATH, set **`BEADS_TERN_NODE` to an absolute Node executable path before starting the daemon**. This is a program path, not a shell command; do not append arguments. Changes to the launching shell's environment do not modify an already-running daemon.
 
-## Validation owned by the integrator
+## Verification
 
-No build, test, formatter, install, link, reload or live mutation was run by the adapter author. The following are commands for the integration owner, not recorded passes.
+Recorded native runs are listed in [verification.md](verification.md). The commands below reproduce checks against a disposable database.
 
 ### Type and boundary checks
 
@@ -95,7 +95,7 @@ bd init --prefix=smoke --non-interactive --skip-agents --skip-hooks
 
 Run in the fixture directory, with the same clean environment for both initialization and the test daemon. No global/shared database flags. The installed `bd 1.3.2` documents embedded Dolt as the default and only supported storage backend; do not invent `--backend sqlite`.
 
-After the parent approves installation, point Tern at an isolated config and daemon socket, install **the built package**, and open a real window in that fixture. For example, with absolute paths assigned to `TERN_CONFIG_DIR`, `TERN_DAEMON_SOCKET`, `STENCIL_LOG_DIR`, `FIXTURE`, `PACKAGE`, and `CONTROL` by the fixture owner:
+Point Tern at an isolated config and daemon socket, install **the built package**, and open a real window in that fixture. For example, with absolute paths assigned to `TERN_CONFIG_DIR`, `TERN_DAEMON_SOCKET`, `STENCIL_LOG_DIR`, `FIXTURE`, `PACKAGE`, and `CONTROL` by the fixture owner:
 
 ```sh
 export TERN_CONFIG_DIR TERN_DAEMON_SOCKET STENCIL_LOG_DIR
@@ -124,6 +124,7 @@ The comments appended to `integrations/tern/smoke.txt` are a manual continuation
 1. **Untouched concurrent values:** select an open, unassigned issue A and open Edit. Change only its title. Before Save, use a second actor in the same disposable fixture to claim A and change its description, priority, notes, acceptance and design. Save in Tern, wait for the authoritative refresh, then inspect A through the native details and `bd show A --json` (substitute the fixture ID). The new title must coexist with the second actor's in-progress status, assignee and all other changed fields. The update boundary's expected input is exactly `{id: A, title: "<new title>"}`. Repeat after changing then restoring an unrelated field in the form; it must remain omitted. Saving an unchanged form must close the form without an update request.
 2. **Comments stay with their issue:** create A and B with distinct comment text. Load A's comments and, while the request is visibly pending, attempt table row selection and activation of B, `j`/`k`, and (in board view on a repeated request) card/dependency navigation. The selected issue and details must remain A until completion. Only A's comment text may appear. After selecting B, no A comments may remain; requesting B's comments must show B's text. A run where the request completed before selection was attempted does not exercise the race.
 3. **All includes every status:** seed separate unblocked `pinned`, `hooked`, and fixture-supported custom-status issues, plus an in-progress issue blocked by an open dependency and an explicit blocked issue. Choose All issues. The nonstandard statuses must appear in Other, and the blocked issues in Blocked, not In progress. Cycle through issues with `j`/`k` and verify each selected ID has a visible card; Table must expose the same IDs. Active must exclude the native-blocked in-progress issue; Blocked must include it and the explicit blocked issue. Compare Ready IDs with native `bd ready --json`, not an inferred open-status list. Do not alter production status configuration to prepare this case.
+4. **Visible, scrollable surface:** capture the ordinary window with `tern ctl shot`, not just its element tree. The empty `.sf-layer` must remain transparent. At a normal window height, use the wheel over `.sf-main` to reveal a dependency below the fold and click it without resizing. Background and padding belong only to main/dock regions.
 
 
 ## Discovery evidence (raw excerpts)

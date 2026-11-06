@@ -15,6 +15,8 @@ The implementation uses the published `@getpaseo/plugin@0.14.0` contract:
 
 The panel provides board/table views, text/assignee/label search, status/ready/blocked filters, issue details, create/edit, claim, close/reopen, stale-lease reclaim, dependencies/dependents, link/unlink and comments. The screen pins its initially chosen workspace instead of following activity-based list reordering. If that selection disappears, writes are disabled and drafts are retained until the workspace returns or the user selects another. While a mutation is pending, issue and workspace selection are disabled so its outcome remains visible. Edits submit only changed fields; there is no same-field conflict detection, so concurrent changes to an edited field can still be overwritten. The Blocked group includes non-closed issues with explicit `blocked` status or native blocked membership. Mutation results are not guessed; successful mutations invalidate and refresh the authoritative snapshot. The UI shows pending states and raw backend failures. There is no automatic completion, automatic database initialization, arbitrary shell command, or agent spawning.
 
+The detail panel renders each native comment as author, local timestamp and selectable text. The underlying RPC and agent-tool comment records remain unchanged.
+
 ### Shared code and native design
 
 All database operations use the same `src/core/service.ts` as the other Beads integrations. Paseo's client is React Native, including on desktop/web, and its documented plugin contract prohibits DOM elements and DOM-library imports. Consequently this plugin implements native components rather than attempting a fake embedded `src/ui.mount` panel.

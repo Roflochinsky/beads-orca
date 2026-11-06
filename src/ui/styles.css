@@ -164,6 +164,7 @@ kbd { display: inline-flex; align-items: center; justify-content: center; min-wi
 .banner { display: flex; align-items: center; gap: 12px; margin: 0 24px 12px; padding: 12px; border: 1px solid var(--color-line-strong); border-radius: 12px; background: var(--color-surface); }
 .banner > div { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .banner p { color: var(--color-ink-2); font-size: 12px; }
+.banner.banner--undo { position: fixed; z-index: 40; bottom: 16px; left: 50%; width: min(520px, calc(100vw - 32px)); margin: 0; transform: translateX(-50%); box-shadow: var(--shadow-overlay); }
 .dialog { width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 32px); padding: 0; border: 1px solid var(--color-line); border-radius: 16px; background: var(--color-bg); color: var(--color-ink); box-shadow: var(--shadow-overlay); overflow: hidden; }
 .dialog::backdrop { background: var(--color-scrim); }
 .dialog form { display: flex; flex-direction: column; max-height: calc(100vh - 32px); }
@@ -204,7 +205,7 @@ kbd { display: inline-flex; align-items: center; justify-content: center; min-wi
 .tray-panel__hints { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
 .tray-panel__hints > span { display: inline-flex; align-items: center; gap: 2px; white-space: nowrap; }
 .tray-panel__detail { display: none; }
-.tray-panel .banner { margin: 8px 12px; }
+.tray-panel .banner:not(.banner--undo) { margin: 8px 12px; }
 .tray-panel .banner .btn--icon { flex: none; }
 .tray-panel--shade { width: min(760px, 100vw); height: min(560px, 100vh); border-radius: 0 0 16px 16px; }
 @media (min-width: 650px) {
