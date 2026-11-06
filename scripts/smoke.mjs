@@ -16,7 +16,7 @@ let request;
 activate({
   host: {
     async call(method) {
-      if (method === 'workspace.list') return { workspaces: projects.map((project) => ({ ...project, hostId: null })), truncated: false };
+      if (method === 'workspace.list') return { workspaces: projects.map((project) => ({ ...project, hostId: 'local' })), truncated: false };
       if (method === 'statusBar.update') return;
       throw new Error(`Unexpected Orca host call: ${method}`);
     },

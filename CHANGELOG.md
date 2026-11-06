@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.2 — 2026-11-06
+
+- Added a root format-2 manifest and native TypeScript source loading for installation through Orca's Git URL flow, without a build or development link.
+- Added MIT licensing, preserved third-party notices, and prepared public discovery metadata with screenshots.
+- Published bilingual repository documentation separating current task-board capabilities from the approved agent-handoff, remote-workspace, history and filter roadmap.
+- Kept the plugin-only archive and added CI checks for source resources, bundled resources and archive checksums. No editor, Electron runtime or other host implementation is included.
+- Tern now has its own repository, [beads-tern](https://github.com/Roflochinsky/beads-tern); the remaining native hosts stay in beads-hud.
+- Fixed discovery of local workspaces reported by Orca with `hostId: "local"`; remote-host paths remain excluded from the local adapter.
+
 ## 0.1.1 — 2026-11-06
 
 - Made this repository exclusively the Orca plugin. Other integrations, native desktop delivery and the synthetic design reference belong to [beads-hud/native](https://github.com/Roflochinsky/beads-hud/tree/main/native); the original browser HUD remains at the repository root there.

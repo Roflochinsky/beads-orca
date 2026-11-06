@@ -1,27 +1,61 @@
 # Beads Board for Orca
 
-Плагин Beads для Orca: HTML-панель и trusted TypeScript worker. Версия пакета — **0.1.1**, локальная identity — **local.beads**, результат сборки — **dist/orca**.
+**Your Beads board, inside Orca.** See what is ready, follow dependencies, and update issues without leaving your workspace. Beads remains the source of truth; the panel works with your existing `bd` CLI and project.
 
-Данные читает и изменяет установленный `bd`. Плагин не создаёт вторую базу задач, не инициализирует пользовательские проекты, не запускает агентов и не закрывает задачи по состоянию агентской сессии.
+[Русский](README.ru.md)
 
-## Владение репозиториями
+![Beads Board showing a demo project](docs/images/board.png)
 
-Этот приватный репозиторий содержит только Orca. Tern, Paseo, Omarchy, Linux/macOS desktop и демонстрационный дизайн принадлежат [beads-hud/native](https://github.com/Roflochinsky/beads-hud/tree/main/native). Исходный браузерный HUD остаётся в [beads-hud](https://github.com/Roflochinsky/beads-hud). Репозитории независимы: общих runtime-импортов и зависимостей между ними нет.
+*Screenshots show the actual plugin panel in a headless browser, backed by an isolated Beads demo project. Tasks are synthetic and the displayed project path is sanitized; these are not screenshots of the Orca window.*
 
-Рабочий интерфейс Orca находится в `src/ui`; все задачи приходят из Beads. Сохраняются board/table, поиск и фильтры, сортировка, подсветка зависимостей, drag-to-claim/close/reopen, редактирование изменённых полей, комментарии и guarded Close → Undo. Ready берётся из `bd ready`; Blocked объединяет явный статус и `bd blocked`, раньше In progress. Интерфейс не вычисляет собственные правила блокировки. Onest и Material Symbols поставляются с [лицензиями](src/ui/THIRD-PARTY.md).
+## Install
 
-## Требования
+Install the native plugin directly from Git; no source build or development link is needed. Community-catalog discovery is separate and may require review.
 
-- Orca ≥1.4.248 с поддержкой trusted-worker и HTML-панелей.
-- Node.js 24 или новее для сборки и проверок; runtime worker предоставляет Orca.
-- Установленный `bd` **1.3.2** в PATH процесса Orca, не только интерактивной оболочки. Проверки закреплены на этой версии.
-- Уже инициализированный локальный Beads-проект.
+In Orca, open **Settings → Plugins → Add plugin → From Git URL** and enter:
 
-Нет зависимостей Electron, React Native или других хостов, отдельного HTTP-сервера и desktop launcher. Ошибки CLI показываются пользователю; отсутствие базы не превращается в пустую очередь. Команды исполняются массивом аргументов без shell.
+```text
+https://github.com/Roflochinsky/beads-orca#v0.1.2
+```
 
-Это не песочница базы данных: плагин доверяет конфигурации выбранного проекта. В `bd` 1.3.2 проверка локального ID и последующая запись не атомарны. Внешний процесс может удалить задачу между ними, после чего CLI применит настроенный prefix route. Плагин не меняет маршруты и не обещает защиту от этой гонки; подробности — в [контракте адаптера](src/core/README.md).
+Alternatively, use the [Orca community catalog](https://onorca.dev/plugins/roflochinsky.beads?catalog=community) once listed. Check the [listing status](https://www.onorca.dev/plugins/roflochinsky/beads-orca) if it is not available there; Git installation does not require a community listing.
 
-## Сборка и проверки
+You will need:
+
+- Orca **1.4.248 or newer**.
+- Beads CLI **1.3.2** on the Orca process's `PATH`, and an already initialized local Beads project.
+
+Review the publisher and access request during installation, approve only if you trust the plugin, and open the **Beads Board** panel in Orca. Local Orca workspaces are listed automatically. To add another local project, use **Additional local Beads project paths** in the plugin settings, one absolute project path per line.
+
+> **Trust matters.** This is a trusted worker, not a sandboxed panel. It runs with the full access of your user account and invokes the local `bd` CLI to read and change tasks. Install it only if you trust the plugin and the selected projects. Review the requested Orca capabilities before approval.
+
+## Work with your tasks
+
+- **Find the next issue.** Switch between board and sortable table, search by title, ID, description, assignee or label, and filter by view, type, priority and assignee.
+- **Understand dependencies.** See relationships in the board and issue details; highlight a task's blockers and dependents. Ready and blocked membership comes from Beads, not a separate rules engine.
+- **Keep work moving.** Create and edit issues, manage dependencies and comments, and Claim, Close or Reopen from the panel. Closing offers a guarded Undo: it reopens only if the issue has not changed since it was closed.
+
+| Table | Issue details |
+| --- | --- |
+| [![Sortable table of demo issues](docs/images/table.png)](docs/images/table.png) | [![Demo issue details and dependencies](docs/images/detail.png)](docs/images/detail.png) |
+
+## Current limits
+
+The plugin operates on **local** projects through the locally installed `bd`. It does not read or modify a remote workspace's Beads database, launch agents, hand tasks to agents, or close tasks based on agent session state. It adds its own panel; it does not replace Orca's built-in Tasks.
+
+Project configuration and routing are trusted. In Beads 1.3.2, the local-ID precheck and a subsequent write are not atomic: an external deletion between them can allow native prefix routing to another configured store. This plugin is not a database sandbox. See the [adapter contract](src/core/README.md) for details.
+
+This repository is for Orca only. For Tern, see [beads-tern](https://github.com/Roflochinsky/beads-tern); for other hosts and the original browser HUD, see [beads-hud](https://github.com/Roflochinsky/beads-hud) and its [native integrations](https://github.com/Roflochinsky/beads-hud/tree/main/native).
+
+## Approved roadmap
+
+These are **planned, not implemented**; no release dates are promised. The approved Q1–Q24 scope includes selecting tasks and previewing explicit handoffs to existing or new CLI agent sessions; blocker and Claim awareness; linked Markdown context; remote-host support; saved filters; personal handoff history; worktree guidance; and human review of results. Sending work will not itself mean an agent accepted it or a Beads task is complete.
+
+See the [detailed product scope](docs/product-scope.md) and [integration constraints](docs/integration-constraints.md).
+
+## Development
+
+From the repository root, with Node.js **24 or newer** and `bd` 1.3.2 installed:
 
 ```sh
 npm ci
@@ -32,35 +66,18 @@ npm run smoke
 npm run package:plugins
 ```
 
-Сборка выпускает только `dist/orca`. Тесты проверяют публичный core RPC через отдельный fake `bd` процесс. Smoke загружает **собранный Orca worker**, регистрирует его panel handler в минимальном host harness и проверяет операции через настоящий `bd` во временном Git/Beads-проекте; пользовательские базы не используются. Это не заменяет проверку панели в реальном Orca. Команды выше — инструкция, не заявление об успешном прогоне: статус в [docs/verification.md](docs/verification.md).
+The build produces `dist/orca`. The smoke uses a disposable Beads project and the built worker, not the real Orca UI. See [verification](docs/verification.md) for recorded evidence and limits.
 
-## Установка в Orca
-
-В Linux вне терминалов Orca используйте `orca-ide`: команда `orca` может означать системный экранный диктор.
+For a local development load, inspect the request and follow the exact approval command returned by Orca:
 
 ```sh
 orca-ide plugin validate ./dist/orca --json
 orca-ide plugin dev load ./dist/orca --json
-```
-
-Вторая команда возвращает точную команду подтверждения. Проверьте fingerprint и разрешения, затем выполните подтверждение только для этого плагина. Манифест сохраняет ровно `workspace:read` и `settings:own`. Trusted worker при этом действительно может читать и изменять Beads через локальный CLI.
-
-```sh
 orca-ide plugin open local.beads --panel beads --json
 ```
 
-Панель использует локальные workspace Orca. Дополнительные пути задаются в **Additional local Beads project paths**, по одному абсолютному пути в строке. Удалённые workspace не исполняются через локальный `bd`; для них требуется установка на соответствующий хост. Orca пока не открывает `taskSources`: плагин добавляет свою панель, не подменяя встроенный Tasks.
+On Linux outside an Orca terminal, use `orca-ide`: bare `orca` can refer to the system screen reader. The `local.beads` identity is for a development load, not the community catalog identity.
 
-## Упаковка и CI/CD
+## License
 
-`npm run package:plugins` создаёт только `release/beads-orca-0.1.1.tar.gz` и `release/SHA256SUMS`. Архив содержит каталог `orca/`; после распаковки его можно передать тем же командам validate/dev load. Суммы включают только архив текущей версии, не старые файлы из локального release.
-
-Workflow `.github/workflows/build.yml` на Linux выполняет npm ci, TypeScript, сборку, тесты, установку Beads 1.3.2 с закреплённым SHA256, real-bd worker smoke и упаковку. Push тега `v<package.json version>` (сейчас `v0.1.1`) публикует только Orca tarball и SHA256SUMS после успешных проверок. Actions закреплены на commit SHA, Node — 24; перед публикацией проверяются контрольные суммы. Репозиторий остаётся приватным; публикации в npm или публичный каталог Orca нет. Native-релизы других хостов выпускает beads-hud под тегами `native-v*`.
-
-## Структура
-
-- `src/core` — адаптер установленного Beads CLI.
-- `src/shared.ts` — модель данных и RPC панели.
-- `src/ui` — board/table, шрифты, иконки и лицензии.
-- `src/orca`, `integrations/orca` — worker и манифест Orca.
-- `tests`, `scripts` — core regressions, сборка, worker smoke и выпуск.
+[MIT](LICENSE). Third-party UI assets retain their own licenses; see the [asset notices](src/ui/THIRD-PARTY.md).

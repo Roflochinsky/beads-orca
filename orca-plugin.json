@@ -1,22 +1,47 @@
 {
+  "$schema": "https://raw.githubusercontent.com/stablyai/orca/main/docs/schemas/plugins/orca-plugin.v2.schema.json",
   "manifestVersion": 2,
   "id": "beads",
   "name": "Beads Board",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Live Beads board, dependencies and issue actions backed by your local bd CLI.",
+  "author": { "name": "Roflochinsky" },
+  "repository": "https://github.com/Roflochinsky/beads-orca",
+  "license": "MIT",
+  "cover": {
+    "path": "docs/images/board.png",
+    "alt": "A sample Beads board with ready, in-progress, blocked and closed issues."
+  },
+  "screenshots": [
+    {
+      "path": "docs/images/board.png",
+      "alt": "Beads issues grouped into ready, in-progress, blocked and closed columns.",
+      "caption": "Board view"
+    },
+    {
+      "path": "docs/images/table.png",
+      "alt": "A table of Beads issues showing status, priority and relationships.",
+      "caption": "Table view"
+    },
+    {
+      "path": "docs/images/detail.png",
+      "alt": "A blocked issue's details, dependencies and comment form beside the board.",
+      "caption": "Issue details"
+    }
+  ],
   "engines": {
     "orca": ">=1.4.248"
   },
   "execution": "trusted-worker",
   "pluginApi": 1,
-  "main": "worker.mjs",
+  "main": "src/orca/worker.ts",
   "contributes": {
     "panels": [
       {
         "id": "beads",
         "title": "Beads Board",
         "icon": "blocks",
-        "entry": "panel.html",
+        "entry": "integrations/orca/panel.html",
         "ui": "html"
       }
     ],

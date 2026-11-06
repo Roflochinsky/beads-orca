@@ -1,11 +1,11 @@
 {
   "name": "@roflochinsky/beads-orca",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Beads Board plugin for Orca",
   "type": "module",
   "author": "Roflochinsky",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "repository": "https://github.com/Roflochinsky/beads-orca",
   "engines": {
     "node": ">=24"

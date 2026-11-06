@@ -1,5 +1,20 @@
 # Проверки Orca
 
+## Публичная поставка 0.1.2
+
+На Linux x64, Node 24.22.1, Beads 1.3.2 и Orca 1.4.250 выполнены:
+
+- TypeScript, сборка, 12 регрессионных тестов и smoke собранного worker с настоящим изолированным bd — успешно.
+- Регрессия `hostId: "local"` сначала воспроизвела исчезновение локального проекта, затем прошла после исправления. SSH, WSL и paired-пути остаются исключёнными из локального адаптера.
+- Source/bundle/archive closure и SHA256 проверены. Локальный архив содержит только плагин, размер 233112 байт.
+- `plugin validate` принял корневой source-манифест и собранный манифест.
+- Исходный TypeScript worker и панель загружены в отдельный headless-профиль Orca. Плагин обнаружил демопроект; настоящая панель показала задачи и зависимости. `plugin shot`: `settled: true`, `errors: []`.
+- Gitleaks 8.30.1 проверил всю доступную Git-историю (8 коммитов до выпуска) и текущее дерево: совпадений не найдено. Это проверка по правилам сканера, не доказательство отсутствия любых чувствительных данных.
+
+README-скриншоты сняты с существующей панели 0.1.1 в headless Chromium с реальным изолированным demo worker; путь в отображении обезличен. Они показывают текущий интерфейс, но не служат доказательством Git-установки 0.1.2.
+
+Git-установка опубликованного тега и статус release CI фиксируются отдельно после публикации. Community discovery не является условием нативной установки по Git URL.
+
 ## Статус разделения репозиториев
 
 Версия 0.1.1 выделена из исходного коммита `06fbecacae1537851886f7c9a6708751dee9c6e5`. После разделения на Linux x64 выполнены:
@@ -35,9 +50,9 @@ npm run build
 npm test
 npm run smoke
 npm run package:plugins
-GITHUB_REF_NAME=v0.1.1 node scripts/check-version.mjs
+GITHUB_REF_NAME=v0.1.2 node scripts/check-version.mjs
 (cd release && sha256sum --check SHA256SUMS)
-tar -tzf release/beads-orca-0.1.1.tar.gz
+tar -tzf release/beads-orca-0.1.2.tar.gz
 orca-ide plugin validate ./dist/orca --json
 orca-ide plugin dev load ./dist/orca --json
 ```

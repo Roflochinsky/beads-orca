@@ -17,7 +17,7 @@ async function projectsFor(orca: OrcaHost): Promise<Project[]> {
   const result = await orca.host.call('workspace.list');
   if (result.truncated) throw new Error('Orca truncated its workspace list. Narrow the registered workspaces before using Beads.');
   const projects: Project[] = result.workspaces
-    .filter((workspace) => workspace.hostId === null)
+    .filter((workspace) => workspace.hostId === null || workspace.hostId === 'local')
     .map(({ id, name, path }) => ({ id, name, path }));
   const configured = await orca.settings.get('projectPaths');
   if (typeof configured === 'string') {
