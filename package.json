@@ -17,6 +17,7 @@
     "build": "node scripts/build.mjs",
     "test": "node scripts/test.mjs",
     "smoke": "node scripts/smoke.mjs",
+    "smoke:desktop": "node scripts/smoke-desktop.mjs",
     "start": "electron .",
     "serve": "node dist/server/main.js",
     "package:desktop": "electron-builder --publish never",

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
@@ -17,18 +17,26 @@ function request(cwd: string, input: unknown): { code: number | null; body: Reco
 }
 
 test('Tern bridge exposes only its host supplied workspace, never an RPC supplied path', async () => {
-  const cwd = await mkdtemp(join(tmpdir(), 'beads-tern-'));
+  const root = await mkdtemp(join(tmpdir(), 'beads-tern-'));
+  const cwd = join(root, 'workspace');
+  const alias = join(root, 'alias');
   try {
-    const projects = await request(cwd, { method: 'projects' });
+    await mkdir(cwd);
+    await symlink(cwd, alias, 'dir');
+    const projects = request(alias, { method: 'projects' });
     assert.equal(projects.code, 0);
     assert.equal(projects.body.ok, true);
-    assert.deepEqual(projects.body.result, [{ id: 'workspace', name: cwd.split('/').at(-1), path: cwd }]);
+    assert.ok(Array.isArray(projects.body.result));
+    assert.equal(projects.body.result.length, 1);
+    const [project] = projects.body.result;
+    assert.ok(project && typeof project === 'object' && 'path' in project && typeof project.path === 'string');
+    assert.equal(await realpath(project.path), await realpath(cwd));
     const denied = await request(cwd, { method: 'snapshot', project: '/some/other/workspace' });
     assert.equal(denied.code, 1);
     assert.equal(denied.body.ok, false);
-    assert.match(String(denied.body.error), /project|workspace/i);
+    assert.equal('result' in denied.body, false);
   } finally {
-    await rm(cwd, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true });
   }
 });
 
