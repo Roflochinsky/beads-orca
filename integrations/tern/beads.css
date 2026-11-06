@@ -27,6 +27,9 @@
   font-size: 14px;
   padding: 12px;
 }
+[data-surface='plugin.beads.board'] .sf-row[data-role='beads-board'] {
+  align-items: flex-start;
+}
 .sf-main[data-surface='plugin.beads.board'] {
   overflow: auto;
 }
