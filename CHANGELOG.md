@@ -8,7 +8,7 @@
 - Kept the installed-bd core, board/table behavior, search-focus correction, dependency spotlight, drag operations, edited-field updates, comments and guarded close undo.
 - Changed real-bd smoke to exercise the built Orca worker panel handler, independent of another host's build output. Core regression tests remain unchanged.
 - Simplified Node 24 build/test/CI dependencies and lockfile. Tags `v*` now release only the current Orca tarball and SHA256SUMS; desktop/native releases belong to HUD's `native-v*` workflow.
-- Repository-split verification is pending; no build, test or runtime check was run during this migration.
+- Verified typechecking, build, 11 core tests, real-bd worker smoke, the actual Orca panel and Claim/Close/Reopen through the installed worker. Both the release workflow and main CI passed; the published Orca archive checksum was verified after download.
 
 ## 0.1.0 — 2026-11-06
 
