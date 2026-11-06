@@ -1,0 +1,41 @@
+{
+  "manifestVersion": 2,
+  "id": "beads",
+  "name": "Beads Board",
+  "version": "0.1.0",
+  "description": "Live Beads board, dependencies and issue actions backed by your local bd CLI.",
+  "engines": {
+    "orca": ">=1.4.248"
+  },
+  "execution": "trusted-worker",
+  "pluginApi": 1,
+  "main": "worker.mjs",
+  "contributes": {
+    "panels": [
+      {
+        "id": "beads",
+        "title": "Beads Board",
+        "icon": "blocks",
+        "entry": "panel.html",
+        "ui": "html"
+      }
+    ],
+    "settings": [
+      {
+        "key": "projectPaths",
+        "title": "Additional local Beads project paths",
+        "description": "One absolute directory per line. Local Orca workspaces are included automatically; remote workspaces require running the plugin on their host.",
+        "type": "string",
+        "multiline": true,
+        "default": ""
+      }
+    ],
+    "statusBarItems": [
+      { "id": "queue", "text": "Beads —", "icon": "blocks", "tooltip": "Open the Beads panel to load a project." }
+    ]
+  },
+  "capabilities": [
+    { "kind": "workspace:read" },
+    { "kind": "settings:own" }
+  ]
+}

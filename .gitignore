@@ -1,0 +1,10 @@
+node_modules/
+dist/
+release/
+.test-dist/
+.orca/
+*.log
+.env*
+.DS_Store
+artifacts/
+design-reference/.impeccable/
