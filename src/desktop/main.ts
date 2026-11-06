@@ -16,6 +16,7 @@ const SHORTCUT = 'CommandOrControl+Shift+Space';
 const desktopDir = dirname(fileURLToPath(import.meta.url));
 const uiDir = join(desktopDir, '..', 'ui');
 const platform = process.platform === 'darwin' ? 'macos' : 'linux';
+const panelHeight = platform === 'macos' ? 640 : 560;
 
 // A standard, secure origin lets browser modules and fonts load without giving
 // the renderer file:// access or relaxing Chromium's same-origin policy.
@@ -135,7 +136,7 @@ function createWindow(mode: 'tray' | 'board'): BrowserWindow {
   const panelWidth = platform === 'macos' || workArea.width < 900 ? 400 : 760;
   const window = new BrowserWindow({
     width: isPanel ? Math.min(panelWidth, workArea.width) : 1200,
-    height: isPanel ? Math.min(700, workArea.height) : 800,
+    height: isPanel ? Math.min(panelHeight, workArea.height) : 800,
     minWidth: isPanel ? undefined : 600,
     minHeight: isPanel ? undefined : 400,
     show: false,
@@ -188,7 +189,7 @@ function panelBounds(): Rectangle {
     : screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
   const area = display.workArea;
   const width = Math.min(platform === 'macos' || area.width < 900 ? 400 : 760, area.width);
-  const height = Math.min(700, area.height);
+  const height = Math.min(panelHeight, area.height);
   const usableAnchor = anchor && anchor.width > 0 && anchor.height > 0;
   const center = usableAnchor ? anchor.x + anchor.width / 2 : area.x + area.width - width / 2;
   const below = usableAnchor ? anchor.y + anchor.height : area.y;

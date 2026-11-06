@@ -84,7 +84,7 @@ try {
   const observed = await evaluate(sessionId, `(async () => {
     const projects = await window.beadsTransport.request({method:'projects'});
     const snapshot = await window.beadsTransport.request({method:'snapshot',project:projects[0].id});
-    return {projects,snapshot,node:typeof process,require:typeof require,origin:location.origin,width:innerWidth};
+    return {projects,snapshot,node:typeof process,require:typeof require,origin:location.origin,width:innerWidth,height:innerHeight,panelHeight:document.querySelector('.tray-panel').getBoundingClientRect().height};
   })()`);
   assert.equal(observed.node, 'undefined');
   assert.equal(observed.require, 'undefined');
@@ -93,6 +93,7 @@ try {
   assert.equal(await realpath(observed.projects[0].path), project);
   assert.ok(observed.snapshot.readyIds.includes(initial.id));
   assert.equal(observed.width, process.platform === 'darwin' ? 400 : 760);
+  assert.equal(observed.height, observed.panelHeight, 'The native popup must not leave an empty band below the tray surface');
   const projectId = JSON.stringify(observed.projects[0].id);
   const created = await evaluate(sessionId, `(async () => {
     await window.beadsTransport.request({method:'create',project:${projectId},input:{title:'Packaged renderer write',type:'task',priority:2}});
