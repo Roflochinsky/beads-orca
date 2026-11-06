@@ -1,8 +1,0 @@
-{
-  "id": "beads",
-  "name": "Beads",
-  "description": "Ready-first issue boards, dependencies and Beads tools for Paseo workspaces.",
-  "requirements": {
-    "paseo": ">=0.14.0 <0.15.0"
-  }
-}

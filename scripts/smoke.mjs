@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { appendFile, mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { handleRequest } from '../dist/paseo/server/core.js';
+import activate from '../dist/orca/worker.mjs';
 
 const root = await mkdtemp(join(tmpdir(), 'beads-board-smoke-'));
 const projectPath = join(root, 'project');
@@ -12,7 +12,20 @@ await mkdir(join(root, 'home'));
 for (const key of Object.keys(process.env)) if (/^(BEADS_|BD_|DOLT_|GIT_DIR$|GIT_WORK_TREE$)/.test(key)) delete process.env[key];
 Object.assign(process.env, { HOME: join(root, 'home'), XDG_CONFIG_HOME: join(root, 'home', '.config'), BEADS_ACTOR: 'beads-board-smoke', BD_NON_INTERACTIVE: '1', CI: 'true' });
 const projects = [{ id: 'smoke', name: 'Smoke workspace', path: projectPath }];
-const call = (method, input) => handleRequest({ method, project: 'smoke', input }, projects);
+let request;
+activate({
+  host: {
+    async call(method) {
+      if (method === 'workspace.list') return { workspaces: projects.map((project) => ({ ...project, hostId: null })), truncated: false };
+      if (method === 'statusBar.update') return;
+      throw new Error(`Unexpected Orca host call: ${method}`);
+    },
+  },
+  settings: { async get() { return ''; } },
+  panels: { handle(name, handler) { assert.equal(name, 'beads'); request = handler; } },
+});
+assert.equal(typeof request, 'function', 'built worker must register the Beads panel handler');
+const call = (method, input) => request({ method, project: 'smoke', input });
 try {
   execFileSync('git', ['init', '--quiet'], { cwd: projectPath });
   execFileSync('git', ['config', 'user.name', 'Beads Board Smoke'], { cwd: projectPath });
@@ -59,7 +72,7 @@ try {
   await call('comment', { id: dependent.id, text: 'Verified through real bd, not a mock.' });
   const comments = await call('comments', { id: dependent.id });
   assert.match(JSON.stringify(comments), /Verified through real bd/);
-  await assert.rejects(() => handleRequest({ method: 'snapshot', project: 'not-registered' }, projects));
+  await assert.rejects(() => request({ method: 'snapshot', project: 'not-registered' }));
   console.log('PASS: directory-default suppression, singleton external edges, create, dependencies before/after close, ready/blocked transitions, claim, reopen, unlink, update, comments and registered-project selection.');
   if (process.argv.includes('--keep')) console.log(`Fixture retained: ${projectPath}`);
 } finally {

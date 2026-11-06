@@ -2,7 +2,7 @@
   "manifestVersion": 2,
   "id": "beads",
   "name": "Beads Board",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Live Beads board, dependencies and issue actions backed by your local bd CLI.",
   "engines": {
     "orca": ">=1.4.248"

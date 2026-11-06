@@ -1,13 +1,7 @@
 import type { Issue, Project, Snapshot, Transport } from '../shared.js';
 import { icon } from './icons.js';
 
-export interface MountOptions {
-  mode?: 'board' | 'tray';
-  platform?: 'orca' | 'tern' | 'paseo' | 'linux' | 'macos';
-}
-
 type Group = 'ready' | 'active' | 'blocked' | 'closed' | 'deferred' | 'other';
-type TrayTab = 'ready' | 'active' | 'blocked' | 'closed';
 type Draft = { title: string; description: string; type: string; priority: string; assignee: string; labels: string };
 type EditValues = { title: string; description: string; priority: string; assignee: string; notes: string; acceptance: string; design: string };
 type EditDraft = { baseline: EditValues; values: EditValues };
@@ -88,11 +82,9 @@ function actionCommand(method: string, id: string, dependsOn = '', type = 'block
   }
 }
 
-/** Mount a live Beads board or tray into a host-owned element. */
-export function mount(root: HTMLElement, transport: Transport, options: MountOptions = {}): void {
+/** Mount the live Orca Beads board into a panel-owned element. */
+export function mount(root: HTMLElement, transport: Transport): void {
   cleanups.get(root)?.();
-  const tray = options.mode === 'tray';
-  const desktop = options.platform === 'linux' || options.platform === 'macos';
   let projects: Project[] = [];
   let projectId = '';
   let snapshot: Snapshot | null = null;
@@ -108,7 +100,6 @@ export function mount(root: HTMLElement, transport: Transport, options: MountOpt
   let detailLoading = false;
   let detailError = '';
   let selectedId = '';
-  let tab: TrayTab = 'ready';
   let view: Group | 'all' = 'all';
   let layout: 'board' | 'table' = 'board';
   let query = '';
@@ -133,7 +124,6 @@ export function mount(root: HTMLElement, transport: Transport, options: MountOpt
   let commentsError = '';
   let commentsSequence = 0;
   let undoClose: { project: string; id: string; updatedAt: string; closedAt?: string } | null = null;
-  let captureRequested = false;
   let projectLoadTask: Promise<void> | null = null;
   let snapshotGeneration = 0;
   let projectsReloadPending = false;
@@ -154,8 +144,7 @@ export function mount(root: HTMLElement, transport: Transport, options: MountOpt
     return allIssues().filter((issue) => {
       const group = groupOf(issue);
       if (!showClosed && group === 'closed') return false;
-      if (!tray && view !== 'all' && group !== view) return false;
-      if (tray && group !== tab) return false;
+      if (view !== 'all' && group !== view) return false;
       if (typeFilter && issue.type !== typeFilter) return false;
       if (priorityFilter && String(issue.priority) !== priorityFilter) return false;
       if (assigneeFilter && issue.assignee !== assigneeFilter) return false;
@@ -164,7 +153,6 @@ export function mount(root: HTMLElement, transport: Transport, options: MountOpt
   };
   const count = (group: Group): number => allIssues().filter((issue) => groupOf(issue) === group).length;
   const currentIssue = (): Issue | undefined => detail?.id === selectedId ? detail : byId(selectedId);
-  const isDesktop = (): boolean => tray && desktop;
   const disabled = (): string => pending ? ' disabled' : '';
 
   function projectSelect(): string {
@@ -316,13 +304,13 @@ export function mount(root: HTMLElement, transport: Transport, options: MountOpt
   }
 
  
-  function issueDetail(issue: Issue, inline = false): string {
+  function issueDetail(issue: Issue): string {
     const group = groupOf(issue);
     const deps = issue.dependencies;
     const dependents = allIssues().filter((other) => other.dependencies.some((dep) => dep.id === issue.id));
     const candidates = allIssues().filter((other) => other.id !== issue.id && !deps.some((dep) => dep.id === other.id));
     if (dependencyId && !candidates.some((candidate) => candidate.id === dependencyId)) dependencyId = '';
-    return `<div class="detail${inline ? ' detail--inline' : ''}"><div class="detail__top">${icon(typeIcons[issue.type] ?? 'task_alt')}<span class="mono">${escapeHtml(issue.id)}</span>${priority(issue)}<span class="detail__spacer"></span>${!inline ? `<button type="button" class="btn btn--icon" data-action="close-detail" aria-label="Close issue details">${icon('close')}</button>` : ''}</div>
+    return `<div class="detail"><div class="detail__top">${icon(typeIcons[issue.type] ?? 'task_alt')}<span class="mono">${escapeHtml(issue.id)}</span>${priority(issue)}<span class="detail__spacer"></span><button type="button" class="btn btn--icon" data-action="close-detail" aria-label="Close issue details">${icon('close')}</button></div>
       <h2 class="detail__title">${escapeHtml(issue.title)}</h2><div class="detail__actions">${detailActions(issue)}</div>
       ${editSection(issue)}
       <dl class="meta-list"><dt>Status</dt><dd>${bead(group)} ${escapeHtml(groupNames[group])}</dd><dt>Type</dt><dd>${escapeHtml(issue.type)}</dd><dt>Assignee</dt><dd>${escapeHtml(issue.assignee || 'Unassigned')}</dd><dt>Updated</dt><dd>${escapeHtml(relativeTime(issue.updatedAt) || 'Unknown')}</dd>${issue.labels.length ? `<dt>Labels</dt><dd>${issue.labels.map((label) => `<span class="chip chip--label">${escapeHtml(label)}</span>`).join(' ')}</dd>` : ''}</dl>
@@ -356,20 +344,11 @@ export function mount(root: HTMLElement, transport: Transport, options: MountOpt
 
   function bodyState(): string {
     if (loadingProjects || (loadingSnapshot && !snapshot)) return '<div class="empty-state" role="status"><h2>Loading issues…</h2><p>Reading the project from Beads.</p></div>';
-    if (!projects.length) return `<div class="empty-state"><h2>No projects available</h2><p>Add a Beads project in the host, then refresh.</p>${isDesktop() ? '<button class="btn btn--outlined" type="button" data-action="manage-projects">Manage projects</button>' : '<button class="btn btn--outlined" type="button" data-action="retry">Refresh</button>'}</div>`;
+    if (!projects.length) return '<div class="empty-state"><h2>No projects available</h2><p>Add a local Beads workspace in Orca or an additional project path in the plugin settings, then refresh.</p><button class="btn btn--outlined" type="button" data-action="retry">Refresh</button></div>';
     if (!snapshot) return '<div class="empty-state"><h2>Issues unavailable</h2><p>Check the error and try loading this project again.</p><button class="btn btn--outlined" type="button" data-action="retry">Retry</button></div>';
     return '';
   }
 
-  function trayShell(): string {
-    const issue = currentIssue();
-    const issues = filtered();
-    const listCommand = 'bd --json --no-color --readonly list --all --limit=0 --flat --include-ephemeral --include-gates --include-infra --include-templates';
-    const tabs: Array<[TrayTab, string, string]> = [['ready', 'Ready', 'bd --json --no-color --readonly ready --limit=0 --include-ephemeral'], ['active', 'Active', listCommand], ['blocked', 'Blocked', `${listCommand}; bd --json --no-color --readonly blocked`], ['closed', 'Closed', listCommand]];
-    const rows = issues.map((item) => `<li class="tray-row${selectedId === item.id ? ' tray-row--selected' : ''}"><button type="button" class="tray-row__button" data-action="select" data-id="${escapeHtml(item.id)}" aria-label="Open ${escapeHtml(item.id)}: ${escapeHtml(item.title)}" aria-current="${pressed(selectedId === item.id)}">${priority(item)}<span class="tray-row__body"><span class="tray-row__title">${escapeHtml(item.title)}</span><span class="tray-row__meta"><span class="mono">${escapeHtml(item.id)}</span>${item.assignee ? ` · ${escapeHtml(item.assignee)}` : ''}</span></span>${icon('chevron_right')}</button>${selectedId === item.id && issue ? `<div class="tray-row__inline">${issueDetail(issue, true)}</div>` : ''}</li>`).join('');
-    const hints = '<span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>4</kbd> queues</span><span><kbd>j</kbd><kbd>k</kbd> move</span><span><kbd>c</kbd> claim</span><span><kbd>x</kbd> close</span><span><kbd>n</kbd> new</span><span><kbd>/</kbd> search</span><span><kbd>Esc</kbd> back</span>';
-    return `<div class="tray-panel${options.platform === 'linux' ? ' tray-panel--shade' : ''}"><header class="tray-panel__header"><span class="tray-panel__glyph">${escapeHtml((projects.find((project) => project.id === projectId)?.name || 'B').slice(0, 2).toLocaleLowerCase())}</span>${projectSelect()}<span class="tray-panel__spacer"></span><button type="button" class="btn btn--icon" data-action="refresh" aria-label="Refresh issues" title="Refresh issues"${disabled()}>${icon('sync')}</button>${isDesktop() ? `<button type="button" class="btn btn--icon" data-action="open-board" aria-label="Open board" title="Open board">${icon('open_in_new')}</button><button type="button" class="btn btn--icon" data-action="manage-projects" aria-label="Manage projects" title="Manage projects">${icon('settings')}</button>` : ''}</header><div class="tray-panel__main"><div class="tray-panel__search">${searchField()}</div><div class="tray-panel__new">${createButton()}</div><div class="tabs" role="tablist" aria-label="Issue queues">${tabs.map(([id, label]) => `<button role="tab" type="button" data-action="tab" data-value="${id}" aria-selected="${pressed(tab === id)}">${label} <span>${count(id)}</span></button>`).join('')}</div>${errorBanner()}${bodyState() || `<ul class="tray-list" aria-label="${escapeHtml(groupNames[tab])} issues">${rows || `<li class="tray-list__empty">${query ? 'No matching issues.' : `No ${tab === 'active' ? 'active' : tab} issues.`}</li>`}</ul>`}</div>${options.platform === 'linux' ? `<aside class="tray-panel__detail" aria-label="Issue details">${issue ? issueDetail(issue) : '<div class="empty-state"><h2>Select an issue</h2><p>Its details and dependencies appear here.</p></div>'}</aside>` : ''}<footer class="tray-panel__footer"><span class="mono">$ ${escapeHtml(tabs.find(([id]) => id === tab)?.[2] || '')}</span><span class="tray-panel__hints">${hints}</span></footer></div>${createDialog()}`;
-  }
 
   function render(): void {
     if (disposed) return;
@@ -384,10 +363,10 @@ export function mount(root: HTMLElement, transport: Transport, options: MountOpt
     const focusIndex = active ? candidates(root).filter(matches).indexOf(active) : -1;
     const start = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement ? active.selectionStart : null;
     const end = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement ? active.selectionEnd : null;
-    const scrollSelector = '.board, .column__list, .table-wrap, .drawer, .tray-list, .tray-panel__detail, .dialog__body';
+    const scrollSelector = '.board, .column__list, .table-wrap, .drawer, .dialog__body';
     const scrollPositions = Array.from(root.querySelectorAll<HTMLElement>(scrollSelector), (element) => [element.scrollTop, element.scrollLeft] as const);
     hoverId = '';
-    root.innerHTML = tray ? trayShell() : boardShell();
+    root.innerHTML = boardShell();
     const dialog = root.querySelector<HTMLDialogElement>('dialog');
     if (dialog) {
       dialog.addEventListener('cancel', (event) => { event.preventDefault(); if (!pending) { createOpen = false; render(); } });
@@ -423,7 +402,6 @@ export function mount(root: HTMLElement, transport: Transport, options: MountOpt
           comments = []; commentsError = ''; undoClose = null;
         }
         loadingProjects = false;
-        flushCapture();
         if (projectId) await refresh();
         else { snapshot = null; render(); }
       } catch (error) {
@@ -552,7 +530,6 @@ export function mount(root: HTMLElement, transport: Transport, options: MountOpt
       if (!disposed) {
         pending = false;
         render();
-        flushCapture();
         if (projectsReloadPending && !projectLoadTask) { projectsReloadPending = false; void loadProjects(); }
       }
     }
@@ -581,22 +558,14 @@ export function mount(root: HTMLElement, transport: Transport, options: MountOpt
       if (!disposed) {
         pending = false;
         render();
-        flushCapture();
         if (projectsReloadPending && !projectLoadTask) { projectsReloadPending = false; void loadProjects(); }
       }
     }
   }
 
-  function flushCapture(): void {
-    if (captureRequested && projectId && !pending && !projectsReloadPending) {
-      captureRequested = false;
-      openCreate();
-    }
-  }
 
   function openCreate(): void {
     if (!projectId || pending) return;
-    captureRequested = false;
     actionError = '';
     createOpen = true;
     render();
@@ -646,18 +615,10 @@ export function mount(root: HTMLElement, transport: Transport, options: MountOpt
       case 'layout': if (target.dataset.value === 'board' || target.dataset.value === 'table') { layout = target.dataset.value; render(); } break;
       case 'spotlight': spotlightOn = !spotlightOn; render(); break;
       case 'view': view = (target.dataset.value || 'all') as Group | 'all'; if (view === 'closed') showClosed = true; render(); break;
-      case 'tab': tab = (target.dataset.value || 'ready') as TrayTab; showClosed = true; selectedId = ''; detail = null; render(); break;
-      case 'select':
-        if (id && byId(id)) {
-          if (tray && id === selectedId) { selectedId = ''; detail = null; detailSequence++; render(); }
-          else void loadDetail(id);
-        }
-        break;
+      case 'select': if (id && byId(id)) void loadDetail(id); break;
       case 'close-detail': selectedId = ''; detail = null; detailSequence++; render(); break;
       case 'claim': case 'close': case 'reopen': case 'reclaim': if (id) void mutate(action, { id }); break;
       case 'unlink': if (id && target.dataset.depends) void mutate('unlink', { id, dependsOn: target.dataset.depends }); break;
-      case 'open-board': window.dispatchEvent(new CustomEvent('beads:open-board')); break;
-      case 'manage-projects': window.dispatchEvent(new CustomEvent('beads:choose-projects')); break;
     }
   }
 
@@ -761,27 +722,7 @@ export function mount(root: HTMLElement, transport: Transport, options: MountOpt
     if (target instanceof Element && target.closest('[data-form="update"], [data-form="comment"], [data-form="link"]')) return;
     if (event.key === '/') { event.preventDefault(); root.querySelector<HTMLInputElement>('[data-focus="search"]')?.focus(); return; }
     if (event.key.toLowerCase() === 'n') { event.preventDefault(); openCreate(); return; }
-    if (!tray) {
-      if (event.key.toLowerCase() === 'v') { layout = layout === 'board' ? 'table' : 'board'; render(); }
-      return;
-    }
-    if (['1', '2', '3', '4'].includes(event.key)) {
-      tab = (['ready', 'active', 'blocked', 'closed'] as TrayTab[])[Number(event.key) - 1]; selectedId = ''; detail = null; showClosed = true; render(); event.preventDefault(); return;
-    }
-    if (event.key === 'j' || event.key === 'k' || event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-      const items = filtered();
-      if (!items.length) return;
-      const index = items.findIndex((issue) => issue.id === selectedId);
-      const delta = event.key === 'j' || event.key === 'ArrowDown' ? 1 : -1;
-      const next = index < 0 ? (delta > 0 ? 0 : items.length - 1) : Math.max(0, Math.min(items.length - 1, index + delta));
-      const nextId = items[next].id;
-      void loadDetail(nextId);
-      Array.from(root.querySelectorAll<HTMLElement>('.tray-row__button')).find((element) => element.dataset.id === nextId)?.focus();
-      event.preventDefault(); return;
-    }
-    const issue = currentIssue();
-    if (issue && event.key.toLowerCase() === 'c' && groupOf(issue) === 'ready') { void mutate('claim', { id: issue.id }); event.preventDefault(); }
-    else if (issue && event.key.toLowerCase() === 'x' && groupOf(issue) !== 'closed') { void mutate('close', { id: issue.id }); event.preventDefault(); }
+    if (event.key.toLowerCase() === 'v') { layout = layout === 'board' ? 'table' : 'board'; render(); }
   }
 
   function spotlightItem(target: EventTarget | null): HTMLElement | null {
@@ -831,10 +772,6 @@ export function mount(root: HTMLElement, transport: Transport, options: MountOpt
   function flushAfterDrag(): void {
     if (disposed || pending || projectLoadTask) return;
     if (projectsReloadPending) { projectsReloadPending = false; void loadProjects(); }
-    else if (captureRequested) {
-      if (projectId) flushCapture();
-      else void loadProjects();
-    }
   }
 
   function onDragEnd(): void {
@@ -900,18 +837,6 @@ export function mount(root: HTMLElement, transport: Transport, options: MountOpt
       if (projectId) void refresh(); else void loadProjects();
     }
   }
-  function onCapture(): void {
-    if (!root.isConnected) return;
-    captureRequested = true;
-    if (drag) return;
-    if (projectId && !pending && !projectLoadTask) flushCapture();
-    else if (!pending && !projectLoadTask) void loadProjects();
-  }
-  function onProjectsChanged(): void {
-    if (!root.isConnected) return;
-    if (pending || projectLoadTask || drag) projectsReloadPending = true;
-    else void loadProjects();
-  }
   root.addEventListener('click', onClick);
   root.addEventListener('input', onInput);
   root.addEventListener('change', onChange);
@@ -927,8 +852,6 @@ export function mount(root: HTMLElement, transport: Transport, options: MountOpt
   root.addEventListener('dragend', onDragEnd);
   document.addEventListener('keydown', onKey);
   document.addEventListener('visibilitychange', onVisibility);
-  window.addEventListener('beads:quick-capture', onCapture);
-  window.addEventListener('beads:projects-changed', onProjectsChanged);
   const timer = window.setInterval(() => {
     if (!root.isConnected) { cleanup(); return; }
     if (!document.hidden && projectId && !pending && !drag && !refreshTask) void refresh();
@@ -951,8 +874,6 @@ export function mount(root: HTMLElement, transport: Transport, options: MountOpt
     root.removeEventListener('dragend', onDragEnd);
     document.removeEventListener('keydown', onKey);
     document.removeEventListener('visibilitychange', onVisibility);
-    window.removeEventListener('beads:quick-capture', onCapture);
-    window.removeEventListener('beads:projects-changed', onProjectsChanged);
   }
   cleanups.set(root, cleanup);
   render();
