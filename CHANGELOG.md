@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.1 — 2026-11-07
+
+- Fixed large snapshots rejected by Orca's 1 MiB native reply limit. A bounded, identity-checked transfer protocol reconstructs complete replies without truncation or automatic application retries.
+- Added transfer expiry, cancellation and cleanup, plus regression coverage for large Unicode/escaped replies, concurrent panels, invalid chunks, capacity limits and mutation failures.
+- Replaced ambiguous project names with a keyboard-accessible picker showing project, workspace, host and path. Prefer an unambiguous current workspace on first load.
+- Separated loading, unavailable, stale and live data. Removed false zero counts and duplicate load errors; technical diagnostics are expandable.
+- Grouped secondary workflows, preserved keyboard focus across renders and improved compact-panel controls without changing the existing visual language.
+- Preserved read-only data loading, database configuration and all existing-session/remote-access limitations. No automatic migration or fallback to a different checkout.
+
 ## 0.2.0 — 2026-11-07
 
 Published at the owner's explicit request with the known existing-session limitation retained. This release is not full Q1–Q24 acceptance. Install from `https://github.com/Roflochinsky/beads-orca#v0.2.0`; runtime source is unchanged from the tested preview.

@@ -89,13 +89,21 @@ export function mount(root: HTMLElement, transport: Transport): void {
   let projects: Project[] = [];
   let projectId = '';
   let snapshot: Snapshot | null = null;
+  let issueIndex = new Map<string, Issue>();
+  let readyIds = new Set<string>();
+  let blockedIds = new Set<string>();
+  let filteredCache: Issue[] | null = null;
   let loadingProjects = true;
   let loadingSnapshot = false;
   let connectionLost = false;
   let loadError = '';
+  let loadErrorSource: 'projects' | 'snapshot' = 'snapshot';
   let actionError = '';
   let pending = false;
   let disposed = false;
+  let projectPickerOpen = false;
+  let productReturn: 'handoff' | 'workflows' = 'workflows';
+  let rendering = false;
   let refreshTask: Promise<void> | null = null;
   let detailSequence = 0;
   let detail: Issue | null = null;
@@ -109,6 +117,7 @@ export function mount(root: HTMLElement, transport: Transport): void {
   let priorityFilter = '';
   let assigneeFilter = '';
   let showClosed = true;
+  let filtersExpanded = false;
   let scope: { projectNames: string[]; hostNames: string[] } | null = null;
   let createOpen = false;
   let draft = emptyDraft();
@@ -144,7 +153,8 @@ export function mount(root: HTMLElement, transport: Transport): void {
     projects: () => projects,
     projectId: () => projectId,
     issueId: () => selectedId,
-    currentUnavailable: () => connectionLost || !snapshot || !!snapshot.offline || snapshot.project.availability === 'offline' || snapshot.project.availability === 'unsupported',
+    currentUnavailable: () => offline(),
+    projectAvailability,
     snapshot: () => snapshot,
     pool: () => [...taskPool.values()],
     addTask: (item) => { taskPool.set(`${item.project}\0${item.id}`, item); },
@@ -172,18 +182,18 @@ export function mount(root: HTMLElement, transport: Transport): void {
 
   const groupOf = (issue: Issue): Group => {
     if (issue.status === 'closed') return 'closed';
-    if (issue.status === 'blocked' || snapshot?.blockedIds.includes(issue.id)) return 'blocked';
+    if (issue.status === 'blocked' || blockedIds.has(issue.id)) return 'blocked';
     if (issue.status === 'deferred') return 'deferred';
     if (issue.status === 'in_progress') return 'active';
-    if (snapshot?.readyIds.includes(issue.id)) return 'ready';
+    if (readyIds.has(issue.id)) return 'ready';
     return 'other';
   };
   const allIssues = (): Issue[] => snapshot?.issues ?? [];
-  const byId = (id: string): Issue | undefined => allIssues().find((issue) => issue.id === id);
+  const byId = (id: string): Issue | undefined => issueIndex.get(id);
   const relationships = (issue: Issue): string => issue.dependencies.map((dep) => `${dep.type}: ${dep.id}`).join(', ');
   const filtered = (): Issue[] => {
     const search = query.trim().toLocaleLowerCase();
-    return allIssues().filter((issue) => {
+    return filteredCache ??= allIssues().filter((issue) => {
       const group = groupOf(issue);
       if (!showClosed && group === 'closed') return false;
       if (view !== 'all' && group !== view) return false;
@@ -198,10 +208,37 @@ export function mount(root: HTMLElement, transport: Transport): void {
   const disabled = (): string => pending ? ' disabled' : '';
   const offline = (): boolean => connectionLost || !snapshot || !!snapshot.offline || snapshot.project.availability === 'offline' || snapshot.project.availability === 'unsupported';
 
+  function projectBasename(project: Project): string {
+    return project.path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || project.name;
+  }
+  function projectAvailability(project: Project): string {
+    if (project.id === projectId) {
+      if (loadingSnapshot || loadingProjects) return snapshot ? offline() ? 'Refreshing · stale' : 'Refreshing' : 'Loading';
+      if (loadError || connectionLost) return snapshot ? 'Stale' : 'Unavailable';
+      if (snapshot?.offline || snapshot?.project.availability === 'offline') return 'Offline · stale';
+      if (snapshot?.project.availability === 'unsupported') return 'Unsupported';
+      if (snapshot) return 'Online';
+    }
+    switch (project.availability) {
+      case 'online': return 'Last checked online';
+      case 'offline': return 'Offline';
+      case 'unsupported': return 'Unsupported';
+      default: return 'Not checked';
+    }
+  }
   function projectSelect(): string {
-    const hosts = [...new Set(projects.map((project) => project.hostName || project.hostId || 'local'))];
-    const options = hosts.map((host) => `<optgroup label="${escapeHtml(host)}">${projects.filter((project) => (project.hostName || project.hostId || 'local') === host).map((project) => `<option value="${escapeHtml(project.id)}"${selected(projectId, project.id)}${inScope(project, scope) ? '' : ' disabled'}>${escapeHtml(project.name)} · ${escapeHtml(project.availability || 'unknown')}</option>`).join('')}</optgroup>`).join('');
-    return `<label class="project-select"><span class="visually-hidden">Project</span><select data-change="project" data-focus="project" aria-label="Project"${disabled()}${projects.length ? '' : ' disabled'}>${options || '<option>No projects</option>'}</select>${icon('arrow_drop_down')}</label>`;
+    const project = projects.find((item) => item.id === projectId);
+    const identities = new Map<string, number>();
+    for (const item of projects) {
+      const key = JSON.stringify([item.name, item.path, item.hostId || 'local']);
+      identities.set(key, (identities.get(key) || 0) + 1);
+    }
+    const choices = projects.map((item) => {
+      const key = JSON.stringify([item.name, item.path, item.hostId || 'local']);
+      const identity = (identities.get(key) || 0) > 1 ? ` · Workspace ID: ${item.workspaceId || item.id}` : '';
+      return `<button type="button" class="project-picker__option" data-action="choose-project" data-id="${escapeHtml(item.id)}" aria-current="${item.id === projectId ? 'true' : 'false'}"${inScope(item, scope) ? '' : ' disabled'}><span class="project-picker__option-title">${escapeHtml(projectBasename(item))}${item.current ? ' <span class="project-picker__current">Current workspace</span>' : ''}</span><span class="project-picker__meta">${escapeHtml(item.workspaceId ? `Workspace: ${item.name}` : 'Additional project path')} · ${escapeHtml(item.hostName || item.hostId || 'Local')} · ${escapeHtml(projectAvailability(item))}${escapeHtml(identity)}</span><span class="project-picker__path">${escapeHtml(item.path)}</span></button>`;
+    }).join('');
+    return `<div class="project-picker"><button class="project-picker__trigger" type="button" data-action="toggle-project-picker" data-focus="project-picker" aria-label="${escapeHtml(project ? `Choose project, selected ${projectBasename(project)}, ${project.workspaceId ? `workspace ${project.name}` : 'additional path'}, ${project.hostName || project.hostId || 'Local'}, ${project.path}` : 'Choose project')}"${project ? ` title="${escapeHtml(project.path)}"` : ''} aria-expanded="${pressed(projectPickerOpen)}" aria-controls="project-picker-options"${pending || !projects.length ? ' disabled' : ''}><span class="project-picker__trigger-text"><strong>${escapeHtml(project ? projectBasename(project) : loadingProjects ? 'Loading projects…' : 'No project')}</strong><span>${escapeHtml(project ? `${project.workspaceId ? `Workspace: ${project.name}` : 'Additional path'} · ${projectAvailability(project)}` : 'Choose a workspace')}</span></span>${icon('arrow_drop_down')}</button><div id="project-picker-options" class="project-picker__panel" aria-label="Available projects"${projectPickerOpen ? '' : ' hidden'}><div class="project-picker__heading">Projects <span>Workspace · host · path</span></div>${scope ? '<p class="project-picker__scope">Saved filter scope limits project choices. Clear filters to see all projects.</p>' : ''}<div class="project-picker__list">${choices}</div></div></div>`;
   }
 
   function searchField(): string {
@@ -209,12 +246,12 @@ export function mount(root: HTMLElement, transport: Transport): void {
   }
 
   function errorBanner(): string {
-    const parts = [loadError, actionError].filter(Boolean);
-    const error = parts.length ? `<div class="banner" role="alert">${icon('error')}<div><strong>Could not complete the request</strong>${parts.map((part) => `<p>${escapeHtml(part)}</p>`).join('')}</div><button class="btn btn--outlined btn--sm" data-action="retry" type="button"${disabled()}>Retry loading</button><button class="btn btn--icon" data-action="dismiss-error" type="button" aria-label="Dismiss error">${icon('close')}</button></div>` : '';
+    const reason = loadError || snapshot?.project.availabilityReason || '';
+    const stale = snapshot && offline() ? `<div class="banner banner--state" role="status"><div><strong>Showing stale, read-only data</strong><p>Last fetched ${escapeHtml(snapshot.fetchedAt)}. Refresh to reconnect before changing issues or sending work.</p>${reason ? `<details data-persist="load-details"><summary data-focus="load-details">Technical details</summary><p>${escapeHtml(reason)}</p></details>` : ''}</div><button class="btn btn--outlined btn--sm" data-action="retry" type="button"${pending || loadingSnapshot || loadingProjects ? ' disabled' : ''}>Retry loading</button></div>` : '';
+    const error = actionError && !createOpen ? `<div class="banner" role="alert">${icon('error')}<div><strong>Could not complete the action</strong><p>${escapeHtml(actionError)}</p></div><button class="btn btn--icon" data-action="dismiss-error" type="button" aria-label="Dismiss error">${icon('close')}</button></div>` : '';
     const undo = undoClose && undoClose.project === projectId ? `<div class="banner banner--undo" role="status"><div><strong>Closed ${escapeHtml(undoClose.id)}</strong><p>Undo reopens this issue if it has not changed.</p></div><button class="btn btn--outlined btn--sm" type="button" data-action="undo-close" title="${escapeHtml(actionCommand('reopen', undoClose.id))}"${disabled()}>Undo</button><button class="btn btn--icon" type="button" data-action="dismiss-undo" aria-label="Dismiss close message">${icon('close')}</button></div>` : '';
-    const offlineNotice = snapshot && offline() ? `<div class="banner" role="status"><div><strong>Offline · read-only snapshot</strong><p>Last fetched ${escapeHtml(snapshot.fetchedAt)}. Reconnect and refresh to change issues or send work.</p></div></div>` : '';
     const cacheNotice = snapshot?.project.cacheError && !offline() ? `<div class="banner" role="status"><div><strong>Offline cache unavailable</strong><p>${escapeHtml(snapshot.project.cacheError)} The current snapshot is live but may not be available offline.</p></div></div>` : '';
-    return offlineNotice + cacheNotice + error + undo;
+    return stale + cacheNotice + error + undo;
   }
 
   function createButton(): string {
@@ -223,7 +260,7 @@ export function mount(root: HTMLElement, transport: Transport): void {
 
   function card(issue: Issue): string {
     const group = groupOf(issue);
-    const dependencyBlocked = snapshot?.blockedIds.includes(issue.id);
+    const dependencyBlocked = blockedIds.has(issue.id);
     return `<article class="issue-card${selectedId === issue.id ? ' issue-card--selected' : ''}${group === 'closed' ? ' issue-card--closed' : ''}" draggable="${pressed(!pending && !offline())}" data-action="select" data-id="${escapeHtml(issue.id)}" title="Drag to move, or open for keyboard-accessible actions">
       <span class="issue-card__top"><input type="checkbox" data-change="pool" data-id="${escapeHtml(issue.id)}" aria-label="Select ${escapeHtml(issue.id)} for handoff"${taskPool.has(`${projectId}\0${issue.id}`) ? ' checked' : ''}>${icon(typeIcons[issue.type] ?? 'task_alt')}<span class="mono">${escapeHtml(issue.id)}</span>${priority(issue)}</span>
       <span class="issue-card__relation" hidden></span>
@@ -291,7 +328,7 @@ export function mount(root: HTMLElement, transport: Transport): void {
 
   function boardContent(): string {
     const issues = filtered();
-    if (!allIssues().length) return `<div class="empty-state"><h2>No issues yet</h2><p>Create the first issue in this project to start the board.</p>${createButton()}</div>`;
+    if (!allIssues().length) return `<div class="empty-state"><h2>No issues yet</h2><p>${offline() ? 'This saved snapshot contains no issues.' : 'Create the first issue in this project to start the board.'}</p>${offline() ? '' : createButton()}</div>`;
     if (!issues.length) return `<div class="empty-state"><h2>No matching issues</h2><p>Try another search or clear the filters.</p><button class="btn btn--outlined" data-action="clear-filters" type="button">Clear filters</button></div>`;
     if (layout === 'table') return tableContent(issues);
     return `<div class="board" aria-label="Issues by status">${groupOrder.filter((group) => (group !== 'other' || issues.some((issue) => groupOf(issue) === group)) && (showClosed || group !== 'closed') && (view === 'all' || view === group)).map((group) => {
@@ -303,13 +340,16 @@ export function mount(root: HTMLElement, transport: Transport): void {
   function filters(): string {
     const issueTypes = [...new Set(allIssues().map((issue) => issue.type))].sort();
     const assignees = [...new Set(allIssues().map((issue) => issue.assignee).filter(Boolean))].sort();
-    return `<div class="filter-bar" aria-label="Filters"><label><span class="visually-hidden">Type</span><select data-change="type" data-focus="type" aria-label="Filter by type"><option value="">All types</option>${issueTypes.map((type) => `<option value="${escapeHtml(type)}"${selected(typeFilter, type)}>${escapeHtml(type)}</option>`).join('')}</select></label><label><span class="visually-hidden">Priority</span><select data-change="priority" data-focus="priority" aria-label="Filter by priority"><option value="">All priorities</option>${[0, 1, 2, 3, 4].map((value) => `<option value="${value}"${selected(priorityFilter, String(value))}>P${value}</option>`).join('')}</select></label><label><span class="visually-hidden">Assignee</span><select data-change="assignee" data-focus="assignee" aria-label="Filter by assignee"><option value="">All assignees</option>${assignees.map((assignee) => `<option value="${escapeHtml(assignee)}"${selected(assigneeFilter, assignee)}>${escapeHtml(assignee)}</option>`).join('')}</select></label><button class="btn btn--text btn--sm" type="button" data-action="clear-filters">Clear filters</button><span class="filter-bar__spacer"></span><span class="muted">${filtered().length} issues · ${taskPool.size} selected</span>${taskPool.size ? '<button class="btn btn--text btn--sm" type="button" data-action="clear-pool">Clear selection</button>' : ''}<label class="check"><input type="checkbox" data-change="closed"${showClosed ? ' checked' : ''}> Closed</label></div>`;
+    const activeFilters = Number(!!typeFilter) + Number(!!priorityFilter) + Number(!!assigneeFilter) + Number(!showClosed)
+      + Number(!!(scope?.projectNames.length || scope?.hostNames.length));
+    return `<div class="filters${filtersExpanded ? ' filters--expanded' : ''}"><button type="button" class="btn btn--outlined btn--sm filters__toggle" data-action="toggle-filters" aria-expanded="${pressed(filtersExpanded)}" aria-controls="issue-filters">Filters${activeFilters ? ` (${activeFilters})` : ''}${icon('arrow_drop_down')}</button><div id="issue-filters" class="filter-bar${filtersExpanded ? ' filter-bar--expanded' : ''}" aria-label="Filters"><label><span class="visually-hidden">Type</span><select data-change="type" data-focus="type" aria-label="Filter by type"><option value="">All types</option>${issueTypes.map((type) => `<option value="${escapeHtml(type)}"${selected(typeFilter, type)}>${escapeHtml(type)}</option>`).join('')}</select></label><label><span class="visually-hidden">Priority</span><select data-change="priority" data-focus="priority" aria-label="Filter by priority"><option value="">All priorities</option>${[0, 1, 2, 3, 4].map((value) => `<option value="${value}"${selected(priorityFilter, String(value))}>P${value}</option>`).join('')}</select></label><label><span class="visually-hidden">Assignee</span><select data-change="assignee" data-focus="assignee" aria-label="Filter by assignee"><option value="">All assignees</option>${assignees.map((assignee) => `<option value="${escapeHtml(assignee)}"${selected(assigneeFilter, assignee)}>${escapeHtml(assignee)}</option>`).join('')}</select></label><label class="check"><input type="checkbox" data-change="closed"${showClosed ? ' checked' : ''}> Closed</label><button class="btn btn--text btn--sm" type="button" data-action="clear-filters">Clear filters</button><span class="filter-bar__spacer"></span><span class="muted">${snapshot ? `${filtered().length} issues` : 'Issues not loaded'}${taskPool.size ? ` · ${taskPool.size} selected` : ''}</span>${taskPool.size ? '<button class="btn btn--text btn--sm" type="button" data-action="clear-pool">Clear selection</button>' : ''}</div></div>`;
   }
 
   function rail(): string {
     const groups: Array<Group | 'all'> = ['all', 'ready', 'active', 'blocked', 'closed', 'deferred'];
+    if (view === 'other' || allIssues().some((issue) => groupOf(issue) === 'other')) groups.push('other');
     const project = projects.find((item) => item.id === projectId);
-    return `<nav class="rail" aria-label="Workspace"><div class="rail__workspace"><span class="rail__glyph">${escapeHtml((project?.name || 'B').slice(0, 2).toLocaleLowerCase())}</span><div>${projectSelect()}${project ? `<span class="rail__path">${escapeHtml(project.path)}</span>` : ''}</div></div><h2 class="rail__heading">Views</h2>${groups.map((group) => `<button type="button" class="rail__item" data-action="view" data-value="${group}" aria-current="${pressed(view === group)}">${group === 'all' ? icon('view_kanban') : bead(group)}<span>${group === 'all' ? 'All issues' : escapeHtml(groupNames[group])}</span><span class="rail__count">${group === 'all' ? allIssues().length : count(group)}</span></button>`).join('')}</nav>`;
+    return `<nav class="rail" aria-label="Workspace"><div class="rail__workspace"><span class="rail__glyph">${escapeHtml((project ? projectBasename(project) : 'B').slice(0, 2).toLocaleLowerCase())}</span><div>${projectSelect()}</div></div><label class="rail__view"><span class="visually-hidden">Issue view</span><select data-change="view" data-focus="view" aria-label="Issue view">${groups.map((group) => `<option value="${group}"${selected(view, group)}>${group === 'all' ? 'All issues' : escapeHtml(groupNames[group])}</option>`).join('')}</select></label><h2 class="rail__heading">Views</h2>${groups.map((group) => `<button type="button" class="rail__item" data-action="view" data-value="${group}" aria-current="${pressed(view === group)}">${group === 'all' ? icon('view_kanban') : bead(group)}<span>${group === 'all' ? 'All issues' : escapeHtml(groupNames[group])}</span><span class="rail__count">${snapshot ? group === 'all' ? allIssues().length : count(group) : '—'}</span></button>`).join('')}</nav>`;
   }
 
   function detailActions(issue: Issue): string {
@@ -382,31 +422,36 @@ export function mount(root: HTMLElement, transport: Transport): void {
   function boardShell(): string {
     const issue = currentIssue();
     const project = projects.find((item) => item.id === projectId);
-    const sync = snapshot ? `${offline() ? 'Offline · last fetched' : 'Synced'} ${relativeTime(snapshot.fetchedAt) || snapshot.fetchedAt}` : 'Refresh';
+    const sync = project ? `${projectAvailability(project)}${snapshot ? ` · ${relativeTime(snapshot.fetchedAt) || snapshot.fetchedAt}` : ''}` : 'Refresh';
     return `<div class="app${issue ? ' app--drawer-open' : ''}">
-      <header class="app-bar"><div class="brand"><span class="brand__mark">${bead('closed')}${bead('active')}${bead('ready')}</span><span>beads</span></div><div class="app-bar__search">${searchField()}</div><div class="app-bar__actions"><button type="button" class="btn btn--text btn--sm" data-action="refresh"${disabled()}>${icon('sync')}<span>${escapeHtml(sync)}</span></button>${createButton()}</div></header>
-      ${rail()}<main class="main"><div class="main__head"><div class="main__title-row"><h1>Board</h1><span class="muted">${count('ready')} ready · ${count('active')} in progress · ${count('blocked')} blocked</span>
+      <header class="app-bar"><div class="brand"><span class="brand__mark">${bead('closed')}${bead('active')}${bead('ready')}</span><span>beads</span></div><div class="app-bar__search">${searchField()}</div><div class="app-bar__actions"><button type="button" class="btn btn--text btn--sm" data-action="refresh" aria-label="${projectId ? 'Refresh issues' : 'Refresh projects'}" title="${escapeHtml(sync)}"${pending || loadingSnapshot || loadingProjects ? ' disabled' : ''}>${icon('sync')}<span>${escapeHtml(sync)}</span></button>${createButton()}</div></header>
+      ${rail()}<main class="main"><div class="main__head"><div class="main__title-row"><h1 tabindex="-1" data-focus="board-heading">${layout === 'board' ? 'Board' : 'Table'}</h1>${snapshot ? `<span class="muted">${count('ready')} ready · ${count('active')} in progress · ${count('blocked')} blocked${offline() ? ' · stale' : ''}</span>` : ''}
       <div class="segmented" aria-label="Layout"><button type="button" data-action="layout" data-value="board" aria-pressed="${pressed(layout === 'board')}">${icon('view_kanban')}Board</button><button type="button" data-action="layout" data-value="table" aria-pressed="${pressed(layout === 'table')}">${icon('table_rows')}Table</button></div>
-      <button type="button" class="btn btn--icon" data-action="spotlight" aria-label="Highlight dependencies" aria-pressed="${pressed(spotlightOn)}" title="Highlight dependencies on hover or focus">${icon('account_tree')}</button></div>${project ? `<p class="muted">Current project: ${escapeHtml(project.name)} · ${escapeHtml(project.hostName || project.hostId || 'local')} · ${escapeHtml(offline() ? 'unavailable or offline' : project.availability || 'unknown')}. Counts and tasks show this project only.${scope ? ' The saved scope limits project choices; use Hosts to view the overview.' : ''}</p>` : ''}${filters()}<div class="filter-bar product-controls">${product.controls()}</div>${layout === 'board' ? '<p class="board__hint">Drag cards to claim, close or reopen. Reopened issues may still be blocked. Open a card for keyboard actions.</p>' : ''}</div>${errorBanner()}${bodyState() || boardContent()}</main>
+      <button type="button" class="btn btn--icon" data-action="spotlight" aria-label="Highlight dependencies" aria-pressed="${pressed(spotlightOn)}" title="Highlight dependencies on hover or focus">${icon('account_tree')}</button></div><div class="main__tools">${filters()}<div class="product-controls">${product.controls()}</div></div>${scope ? '<p class="muted">Saved filter scope limits project choices. Clear filters to see all projects.</p>' : ''}</div>${errorBanner()}${bodyState() || boardContent()}</main>
       ${issue ? `<aside class="drawer" aria-label="Issue details">${issueDetail(issue)}</aside>` : ''}</div>${createDialog()}${product.dialog()}`;
   }
 
   function bodyState(): string {
-    if (loadingProjects || (loadingSnapshot && !snapshot)) return '<div class="empty-state" role="status"><h2>Loading issues…</h2><p>Reading the project from Beads.</p></div>';
+    if (!snapshot && (loadingProjects || loadingSnapshot)) return `<div class="empty-state" role="status"><h2>${loadingProjects ? 'Loading projects…' : 'Loading issues…'}</h2><p>${loadingProjects ? 'Finding available workspaces.' : 'Reading this project from Beads.'}</p></div>`;
+    if (!snapshot && loadError) return `<div class="empty-state empty-state--error" role="alert"><h2>${loadErrorSource === 'projects' ? 'Projects unavailable' : 'Issues unavailable'}</h2><p>${loadErrorSource === 'projects' ? 'Could not load the project list.' : 'Could not load issues for this project.'} Try again to reconnect.</p><details data-persist="load-details"><summary data-focus="load-details">Technical details</summary><p>${escapeHtml(loadError)}</p></details><button class="btn btn--outlined" type="button" data-action="retry"${pending ? ' disabled' : ''}>Retry loading</button></div>`;
     if (!projects.length) return '<div class="empty-state"><h2>No projects available</h2><p>Add a local Beads workspace in Orca or an additional project path in the plugin settings, then refresh.</p><button class="btn btn--outlined" type="button" data-action="retry">Refresh</button></div>';
-    if (!snapshot) return '<div class="empty-state"><h2>Issues unavailable</h2><p>Check the error and try loading this project again.</p><button class="btn btn--outlined" type="button" data-action="retry">Retry</button></div>';
+    if (!snapshot) return '<div class="empty-state" role="status"><h2>Loading issues…</h2><p>Reading this project from Beads.</p></div>';
     return '';
   }
 
 
   function render(): void {
     if (disposed) return;
+    rendering = true;
+    filteredCache = null;
     const active = document.activeElement instanceof HTMLElement && root.contains(document.activeElement) ? document.activeElement : null;
+    const hadProductDialog = !!root.querySelector('[data-product-dialog]');
+    const hadCreateDialog = !!root.querySelector('dialog:not([data-product-dialog])');
     const candidates = (container: HTMLElement): HTMLElement[] => Array.from(container.querySelectorAll<HTMLElement>('[data-focus], [data-input], [data-action], [data-change], [data-product-action], [data-product-input], [data-product-change]'));
     const matches = (element: HTMLElement): boolean => !!active && element.tagName === active.tagName
       && element.dataset.focus === active.dataset.focus && element.dataset.input === active.dataset.input
       && element.dataset.action === active.dataset.action && element.dataset.change === active.dataset.change
-      && element.dataset.id === active.dataset.id
+      && element.dataset.id === active.dataset.id && element.dataset.value === active.dataset.value
       && element.dataset.productAction === active.dataset.productAction && element.dataset.productInput === active.dataset.productInput
       && element.dataset.productChange === active.dataset.productChange && element.dataset.group === active.dataset.group
       && element.dataset.path === active.dataset.path && element.dataset.scope === active.dataset.scope
@@ -415,10 +460,13 @@ export function mount(root: HTMLElement, transport: Transport): void {
     const focusIndex = active ? candidates(root).filter(matches).indexOf(active) : -1;
     const start = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement ? active.selectionStart : null;
     const end = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement ? active.selectionEnd : null;
-    const scrollSelector = '.board, .column__list, .table-wrap, .drawer, .dialog__body';
+    const scrollSelector = '.board, .column__list, .table-wrap, .drawer, .dialog__body, .project-picker__list';
     const scrollPositions = Array.from(root.querySelectorAll<HTMLElement>(scrollSelector), (element) => [element.scrollTop, element.scrollLeft] as const);
+    const openDetails = new Set(Array.from(root.querySelectorAll<HTMLDetailsElement>('details[data-persist][open]'), (element) => element.dataset.persist));
     hoverId = '';
     root.innerHTML = boardShell();
+    for (const element of root.querySelectorAll<HTMLDetailsElement>('details[data-persist]')) element.open = openDetails.has(element.dataset.persist);
+    if (projectPickerOpen) setProjectPicker(true);
     if (offline()) {
       const selectors = ['[data-action=\"new\"]', '[data-action=\"edit\"]', '[data-action=\"claim\"]', '[data-action=\"reclaim\"]', '[data-action=\"close\"]', '[data-action=\"reopen\"]', '[data-action=\"unlink\"]', '[data-action=\"undo-close\"]', '[data-form=\"create\"] input', '[data-form=\"create\"] select', '[data-form=\"create\"] textarea', '[data-form=\"create\"] button[type=\"submit\"]', '[data-form=\"update\"] input', '[data-form=\"update\"] select', '[data-form=\"update\"] textarea', '[data-form=\"update\"] button[type=\"submit\"]', '[data-form=\"comment\"] textarea', '[data-form=\"comment\"] button[type=\"submit\"]', '[data-form=\"link\"] select', '[data-form=\"link\"] button[type=\"submit\"]'];
       for (const element of root.querySelectorAll<HTMLButtonElement | HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(selectors.join(', '))) element.disabled = true;
@@ -439,8 +487,19 @@ export function mount(root: HTMLElement, transport: Transport): void {
       if ((next instanceof HTMLInputElement || next instanceof HTMLTextAreaElement) && start !== null && end !== null) {
         try { next.setSelectionRange(start, end); } catch { /* Search fields and selects vary by browser. */ }
       }
+      if ((active?.dataset.action === 'retry' || active?.dataset.action === 'refresh')
+        && (!next || (next instanceof HTMLButtonElement && next.disabled))) {
+        root.querySelector<HTMLElement>('[data-focus="board-heading"]')?.focus({ preventScroll: true });
+      }
     }
-    applySpotlight();
+    if (hadProductDialog && !root.querySelector('[data-product-dialog]')) {
+      const handoff = productReturn === 'handoff' ? root.querySelector<HTMLButtonElement>('[data-product-action="handoff"]:not(:disabled)') : null;
+      (handoff || root.querySelector<HTMLElement>('[data-focus="workflows"]'))?.focus({ preventScroll: true });
+    } else if (hadCreateDialog && !root.querySelector('dialog')) {
+      (root.querySelector<HTMLButtonElement>('[data-action="new"]:not(:disabled)') || root.querySelector<HTMLElement>('[data-focus="board-heading"]'))?.focus({ preventScroll: true });
+    }
+    rendering = false;
+    if (hoverId || focusId || selectedId) applySpotlight();
   }
 
   async function loadProjects(): Promise<void> {
@@ -454,8 +513,10 @@ export function mount(root: HTMLElement, transport: Transport): void {
         if (disposed) return;
         projects = result;
         if (!projects.some((project) => project.id === projectId)) {
-          projectId = projects[0]?.id ?? '';
-          snapshot = null; selectedId = ''; detail = null; detailSequence++; commentsSequence++;
+          const current = projects.filter((project) => project.current);
+          projectId = (!projectId && current.length === 1 ? current[0]?.id : undefined) || projects[0]?.id || '';
+          snapshot = null; issueIndex.clear(); readyIds.clear(); blockedIds.clear();
+          selectedId = ''; detail = null; detailSequence++; commentsSequence++;
           comments = []; commentsError = ''; undoClose = null;
         }
         loadingProjects = false;
@@ -464,7 +525,7 @@ export function mount(root: HTMLElement, transport: Transport): void {
       } catch (error) {
         if (disposed) return;
         loadingProjects = false;
-        loadError = textError(error);
+        loadError = textError(error) || 'No technical details were provided.'; loadErrorSource = 'projects'; connectionLost = !!snapshot;
         render();
       }
     })();
@@ -478,21 +539,25 @@ export function mount(root: HTMLElement, transport: Transport): void {
     }
   }
 
-  async function refresh(): Promise<void> {
+  async function refresh(showLoading = false): Promise<void> {
     while (refreshTask) await refreshTask;
     const requestedProject = projectId;
     if (!requestedProject || disposed) return;
+    const wasLoading = loadingSnapshot;
     loadingSnapshot = true;
-    if (!snapshot) render();
+    if (showLoading || (!snapshot && !wasLoading)) render();
     const request = (async () => {
       try {
         const result = await transport.request<Snapshot>({ method: 'snapshot', project: requestedProject });
         if (disposed || projectId !== requestedProject) return;
+        if (result.project.id !== requestedProject) throw new Error('Beads returned data for a different project.');
         snapshot = result;
+        issueIndex = new Map(result.issues.map((issue) => [issue.id, issue]));
+        readyIds = new Set(result.readyIds); blockedIds = new Set(result.blockedIds);
         connectionLost = false;
         projects = projects.map((project) => project.id === result.project.id ? { ...project, ...result.project } : project);
         snapshotGeneration++;
-        loadError = '';
+        loadError = ''; loadErrorSource = 'snapshot';
         if (selectedId && !result.issues.some((issue) => issue.id === selectedId)) {
           selectedId = ''; detail = null; detailSequence++;
         } else if (selectedId && result.offline) {
@@ -516,7 +581,7 @@ export function mount(root: HTMLElement, transport: Transport): void {
           if (!disposed && projectId === requestedProject && selectedId === id) await loadComments(id, true);
         }
       } catch (error) {
-        if (!disposed && projectId === requestedProject) { connectionLost = true; loadError = textError(error); }
+        if (!disposed && projectId === requestedProject) { connectionLost = true; loadError = textError(error) || 'No technical details were provided.'; loadErrorSource = 'snapshot'; }
       } finally {
         if (!disposed && projectId === requestedProject) { loadingSnapshot = false; render(); }
       }
@@ -653,25 +718,71 @@ export function mount(root: HTMLElement, transport: Transport): void {
     const project = projects.find((item) => item.id === id);
     if (!project || id === projectId) return;
     if (!inScope(project, scope)) { actionError = 'This project is outside the saved filter scope. Clear filters to view it.'; render(); return; }
-    projectId = id; snapshot = null; connectionLost = false; selectedId = ''; detail = null; detailSequence++; commentsSequence++;
+    projectId = id; snapshot = null; issueIndex.clear(); readyIds.clear(); blockedIds.clear();
+    loadingSnapshot = true; connectionLost = false; selectedId = ''; detail = null; detailSequence++; commentsSequence++;
     comments = []; commentsError = ''; commentsLoading = false; undoClose = null;
     loadError = ''; actionError = ''; if (clearQuery && !scope) query = ''; render(); void refresh();
+  }
+
+  function setProjectPicker(open: boolean, focusChoice = false): void {
+    projectPickerOpen = open;
+    const trigger = root.querySelector<HTMLButtonElement>('[data-action="toggle-project-picker"]');
+    const panel = root.querySelector<HTMLElement>('#project-picker-options');
+    trigger?.setAttribute('aria-expanded', pressed(open));
+    if (panel) panel.hidden = !open;
+    if (open && trigger && panel) {
+      const rect = trigger.getBoundingClientRect();
+      const width = Math.min(480, window.innerWidth - 16);
+      const top = Math.max(8, Math.min(rect.bottom + 8, window.innerHeight - 120));
+      panel.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - width - 8))}px`;
+      panel.style.top = `${top}px`;
+      panel.style.maxHeight = `${Math.max(100, window.innerHeight - top - 8)}px`;
+    }
+    if (open && focusChoice) {
+      const choice = panel?.querySelector<HTMLButtonElement>('[data-action="choose-project"][aria-current="true"]:not(:disabled)')
+        || panel?.querySelector<HTMLButtonElement>('[data-action="choose-project"]:not(:disabled)');
+      choice?.focus();
+    }
+  }
+
+  function onDocumentPointerDown(event: PointerEvent): void {
+    const picker = root.querySelector('.project-picker');
+    if (projectPickerOpen && event.target instanceof Node && !picker?.contains(event.target)) setProjectPicker(false);
+    const menu = root.querySelector<HTMLDetailsElement>('.workflow-menu[open]');
+    if (menu && event.target instanceof Node && !menu.contains(event.target)) menu.open = false;
+  }
+
+  function onResize(): void {
+    if (projectPickerOpen) setProjectPicker(true);
   }
 
 
   function onClick(event: MouseEvent): void {
     const productTarget = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-product-action]') : null;
-    if (productTarget && root.contains(productTarget)) { void product.onClick(productTarget); return; }
+    if (productTarget && root.contains(productTarget)) {
+      if (['handoff', 'filters', 'history', 'worktree', 'hosts'].includes(productTarget.dataset.productAction || '')) {
+        productReturn = productTarget.dataset.productAction === 'handoff' ? 'handoff' : 'workflows';
+      }
+      const menu = productTarget.closest<HTMLDetailsElement>('.workflow-menu');
+      if (menu) menu.open = false;
+      void product.onClick(productTarget); return;
+    }
     const target = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-action]') : null;
     if (event.target instanceof HTMLInputElement && event.target.dataset.change === 'pool') return;
     if (!target || !root.contains(target)) return;
     const action = target.dataset.action;
     const id = target.dataset.id || '';
     switch (action) {
+      case 'toggle-project-picker': setProjectPicker(!projectPickerOpen, !projectPickerOpen); break;
+      case 'choose-project':
+        setProjectPicker(false);
+        root.querySelector<HTMLButtonElement>('[data-action="toggle-project-picker"]')?.focus();
+        if (id) selectProject(id, true);
+        break;
       case 'new': openCreate(); break;
       case 'cancel-create': if (!pending) { createOpen = false; actionError = ''; render(); } break;
-      case 'refresh': if (!pending) { if (projectId) void refresh(); else void loadProjects(); } break;
-      case 'retry': actionError = ''; if (!projects.length) void loadProjects(); else void refresh(); break;
+      case 'refresh': if (!pending) { if (projectId) void refresh(true); else void loadProjects(); } break;
+      case 'retry': if (loadErrorSource === 'projects' || !projects.length) void loadProjects(); else void refresh(true); break;
       case 'retry-detail': if (selectedId) void loadDetail(selectedId); break;
       case 'retry-comments': if (selectedId) void loadComments(selectedId); break;
       case 'undo-close': void undoLastClose(); break;
@@ -695,7 +806,8 @@ export function mount(root: HTMLElement, transport: Transport): void {
         }
         break;
       }
-      case 'dismiss-error': loadError = ''; actionError = ''; render(); break;
+      case 'dismiss-error': actionError = ''; render(); break;
+      case 'toggle-filters': filtersExpanded = !filtersExpanded; render(); break;
       case 'clear-filters': clearFilters(); break;
       case 'clear-pool': taskPool.clear(); render(); break;
       case 'layout': if (target.dataset.value === 'board' || target.dataset.value === 'table') { layout = target.dataset.value; render(); } break;
@@ -721,9 +833,8 @@ export function mount(root: HTMLElement, transport: Transport): void {
         else taskPool.delete(key);
         render();
       }
-    } else if (change === 'project' && target.value !== projectId) {
-      selectProject(target.value, true);
     } else if (change === 'type') { typeFilter = target.value; render(); }
+    else if (change === 'view' && ['all', ...groupOrder].includes(target.value)) { view = target.value as Group | 'all'; if (view === 'closed') showClosed = true; render(); }
     else if (change === 'priority') { priorityFilter = target.value; render(); }
     else if (change === 'assignee') { assigneeFilter = target.value; render(); }
     else if (change === 'closed' && target instanceof HTMLInputElement) { showClosed = target.checked; render(); }
@@ -806,6 +917,29 @@ export function mount(root: HTMLElement, transport: Transport): void {
       return;
     }
     const target = event.target;
+    if (projectPickerOpen) {
+      if (event.key === 'Escape') {
+        setProjectPicker(false);
+        root.querySelector<HTMLButtonElement>('[data-action="toggle-project-picker"]')?.focus();
+        event.preventDefault(); return;
+      }
+      if (target instanceof Element && target.closest('.project-picker') && ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+        const choices = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-action="choose-project"]:not(:disabled)'));
+        const index = choices.indexOf(target as HTMLButtonElement);
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? choices.length - 1
+          : event.key === 'ArrowDown' ? Math.min(index + 1, choices.length - 1) : Math.max(index - 1, 0);
+        choices[next]?.focus(); event.preventDefault(); return;
+      }
+      if (target instanceof Element && target.closest('.project-picker')) return;
+    } else if (target instanceof Element && target.closest('[data-action="toggle-project-picker"]') && event.key === 'ArrowDown') {
+      setProjectPicker(true, true); event.preventDefault(); return;
+    }
+    const menu = root.querySelector<HTMLDetailsElement>('.workflow-menu[open]');
+    if (event.key === 'Escape' && menu) {
+      menu.open = false; menu.querySelector<HTMLElement>('summary')?.focus();
+      event.preventDefault(); return;
+    }
+    if (target instanceof Element && target.closest('.workflow-menu')) return;
     if (drag) {
       if (event.key === 'Escape') { endDrag(); flushAfterDrag(); event.preventDefault(); }
       return;
@@ -839,10 +973,16 @@ export function mount(root: HTMLElement, transport: Transport): void {
     if (item && item !== spotlightItem(event.relatedTarget)) { hoverId = ''; applySpotlight(); }
   }
   function onFocusIn(event: FocusEvent): void {
-    focusId = spotlightItem(event.target)?.dataset.id || '';
-    applySpotlight();
+    const id = spotlightItem(event.target)?.dataset.id || '';
+    if (id !== focusId) { focusId = id; if (!rendering) applySpotlight(); }
   }
   function onFocusOut(event: FocusEvent): void {
+    const picker = root.querySelector('.project-picker');
+    if (!rendering && projectPickerOpen && event.target instanceof Node && picker?.contains(event.target)
+      && event.relatedTarget instanceof Node && !picker.contains(event.relatedTarget)) setProjectPicker(false);
+    const menu = root.querySelector<HTMLDetailsElement>('.workflow-menu[open]');
+    if (!rendering && menu && event.target instanceof Node && menu.contains(event.target)
+      && event.relatedTarget instanceof Node && !menu.contains(event.relatedTarget)) menu.open = false;
     const item = spotlightItem(event.target);
     if (item && item !== spotlightItem(event.relatedTarget)) { focusId = ''; applySpotlight(); }
   }
@@ -950,6 +1090,8 @@ export function mount(root: HTMLElement, transport: Transport): void {
   root.addEventListener('dragend', onDragEnd);
   document.addEventListener('keydown', onKey);
   document.addEventListener('visibilitychange', onVisibility);
+  document.addEventListener('pointerdown', onDocumentPointerDown);
+  window.addEventListener('resize', onResize);
   const timer = window.setInterval(() => {
     if (!root.isConnected) { cleanup(); return; }
     if (!document.hidden && projectId && !pending && !drag && !refreshTask) void refresh();
@@ -972,6 +1114,8 @@ export function mount(root: HTMLElement, transport: Transport): void {
     root.removeEventListener('dragend', onDragEnd);
     document.removeEventListener('keydown', onKey);
     document.removeEventListener('visibilitychange', onVisibility);
+    document.removeEventListener('pointerdown', onDocumentPointerDown);
+    window.removeEventListener('resize', onResize);
   }
   cleanups.set(root, cleanup);
   render();

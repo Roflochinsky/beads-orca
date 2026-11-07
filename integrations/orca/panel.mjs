@@ -1,15 +1,14 @@
 import { mount } from '../../src/ui/index.ts';
+import { createPanelTransport } from '../../src/orca/panel-transport.ts';
 
-const transport = {
-  async request(request) {
+const transport = createPanelTransport({
+  async call(method, params) {
     const host = window.orca?.host;
     if (!host) throw new Error('Open the Beads panel in Orca to connect to the plugin.');
-    const { output } = await host.call('plugin.request', {
-      name: 'beads', input: request, timeoutMs: 120_000,
-    });
-    return output;
+    return host.call(method, params);
   },
-};
+});
+window.addEventListener('pagehide', () => transport.dispose(), { once: true });
 
 const root = document.getElementById('app') ?? document.body.appendChild(document.createElement('div'));
 mount(root, transport);

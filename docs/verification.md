@@ -1,5 +1,19 @@
 # Verification evidence
 
+## Large-reply and UI correction — 0.2.1
+
+Environment: Linux x64, Orca 1.4.250, Node 24 and Beads 1.3.2. The user's screenshot established the native `beads answered with more than 1 MiB` failure; a worker-only snapshot check had missed this host boundary.
+
+- Typecheck/build, **78/78 tests**, real-`bd` smoke and packaging passed. After the final responsive-only correction, typecheck/build/packaging passed again; Impeccable returned `[]`.
+- Source and built plugin manifests passed native validation. The unchanged native host loaded the source plugin in an isolated headless profile, with the production worker and panel transfer adapter.
+- A real local project loaded **1,262 cards with 1,262 unique IDs**, Online status and zero alerts through the actual native bridge. No user issues or database schemas were changed.
+- The 349×900 panel kept the project header, main heading and expanded filters within their containers. Only the board canvas required horizontal scrolling. Project choices exposed workspace and full path; End and Escape navigation restored trigger focus.
+- A project without `.beads` showed Unavailable, one error/retry surface, collapsed technical diagnostics and no false zero-issue count. Retry retained one error surface; switching to the synthetic project loaded all 12 demo issues.
+- The synthetic project's table displayed 12 rows and title sorting. Saved filters, history, worktree and hosts dialogs opened without alerts; dependency details were visible. No model was launched.
+- The [current board screenshot](images/native-board-0.2.1.png) is an inspected native `plugin shot` capture, 1279×900, `settled: true`, `errors: []`. It contains synthetic tasks only. Existing catalog images remain historical; this capture is not substituted for the catalog's minimum-width assets.
+
+Limits: native macOS, real paired-runtime transport and actual model execution were not exercised. Existing-session dispatch remains disabled. A stale-schema workspace still needs its own explicit maintenance decision; the plugin does not migrate it or select a different database silently.
+
 ## Pre-release integration record — 2026-11-07
 
 This section records checks performed before publication of 0.2.0. The owner subsequently explicitly requested release and installation with the documented existing-session limitation. Historical records below apply only to their named versions; publication does not imply full Q1–Q24 acceptance.

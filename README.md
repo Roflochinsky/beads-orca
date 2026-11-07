@@ -4,18 +4,18 @@
 
 [Русский](README.ru.md)
 
-![Beads Board showing a demo project](docs/images/board.png)
+![Beads Board showing a demo project](docs/images/native-board-0.2.1.png)
 
-*Screenshots show the actual plugin panel in a headless browser, backed by an isolated Beads demo project. Tasks are synthetic and the displayed project path is sanitized; these are not screenshots of the Orca window.*
+*The board above is captured from the real Orca 1.4.250 plugin panel with synthetic tasks. Table/detail images below are historical browser captures; no private project data is published.*
 
 ## Install the stable release
 
-Current release: **v0.2.0**. Install the native plugin directly from Git; no source build or development link is needed. Existing-session handoff remains disabled; this release does not claim full Q1–Q24 acceptance. Community-catalog discovery is separate and may require review.
+Current release: **v0.2.1**. Install the native plugin directly from Git; no source build or development link is needed. Existing-session handoff remains disabled; this release does not claim full Q1–Q24 acceptance. Community-catalog discovery is separate and may require review.
 
 In Orca, open **Settings → Plugins → Add plugin → From Git URL** and enter:
 
 ```text
-https://github.com/Roflochinsky/beads-orca#v0.2.0
+https://github.com/Roflochinsky/beads-orca#v0.2.1
 ```
 
 Alternatively, use the [Orca community catalog](https://onorca.dev/plugins/roflochinsky.beads?catalog=community) once listed. Check the [listing status](https://www.onorca.dev/plugins/roflochinsky/beads-orca) if it is not available there; Git installation does not require a community listing.
@@ -28,11 +28,14 @@ Requirements:
 
 Review the publisher and access request during installation, approve only if you trust the plugin, and open the **Beads Board** panel in Orca. Local Orca workspaces are listed automatically. To add another local project, use **Additional local Beads project paths** in the plugin settings, one absolute project path per line.
 
+Choose a project by its workspace, host and full path in the project picker. Identical `main` or `develop` names do not identify the same database. “Not checked” means that the plugin has not read that workspace yet. Each workspace uses its own Beads configuration; the plugin does not migrate old databases or silently substitute another checkout.
+
 > **Trust matters.** This is a trusted worker, not a sandboxed panel. It runs with the full access of your user account and invokes the local `bd` CLI to read and change tasks. Install it only if you trust the plugin and the selected projects. Review the requested Orca capabilities before approval.
 
 ## Work with your tasks (stable)
 
 - **Find the next issue.** Switch between board and sortable table, search by title, ID, description, assignee or label, and filter by view, type, priority and assignee.
+- **Keep large projects intact.** Replies travel in bounded chunks through Orca's 1 MiB bridge limit. Loading, unavailable and stale states are distinct; an unsuccessful read never becomes a misleading zero-issue board.
 - **Understand dependencies.** See relationships in the board and issue details; highlight a task's blockers and dependents. Ready and blocked membership comes from Beads, not a separate rules engine.
 - **Keep work moving.** Create and edit issues, manage dependencies and comments, and Claim, Close or Reopen from the panel. Closing offers a guarded Undo: it reopens only if the issue has not changed since it was closed.
 
@@ -60,7 +63,7 @@ This release implements the following approved features; implementation and full
 
 Development requires Orca **1.4.250+**, Node **24+**, and `bd` **1.3.2** on the execution host. File access requires POSIX semantics and `python3`; remote access also requires system SSH and an explicit `remoteHosts` mapping. See [configuration and trust limits](docs/integration-constraints.md), including the standard native-profile restriction, editor-open race, and SSH-config caveat.
 
-**65 tests**, real-`bd` smoke and package checks passed in [Ubuntu/macOS CI](https://github.com/Roflochinsky/beads-orca/actions/runs/42369795828). Linux native-panel, real isolated SSH/offline and public Git-installation checks also passed. **Actual model execution, Orca's native macOS UI and real paired-runtime behavior remain unverified.** Provider discovery does not prove authentication; imported history and reported results remain unverified claims for human review.
+**78 tests**, real-`bd` smoke and local build checks passed for 0.2.1. The actual Linux Orca panel loaded **1,262 issues** through the native bridge without truncation. See the [versioned verification record](docs/verification.md) for current checks and historical Ubuntu/macOS CI, SSH/offline and Git-installation evidence. **Actual model execution, Orca's native macOS UI and real paired-runtime behavior remain unverified.** Provider discovery does not prove authentication; imported history and reported results remain unverified claims for human review.
 
 See the [implementation/acceptance matrix and preserved decisions](docs/product-scope.md), [workflow contract](docs/workflow.md), and [verification record](docs/verification.md).
 

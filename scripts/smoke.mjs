@@ -4,6 +4,15 @@ import { appendFile, mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/prom
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import activate from '../dist/orca/worker.mjs';
+import { build } from 'esbuild';
+
+// Compile the production panel adapter in memory, using the same bundler as
+// build/test. Keep the worker under test loaded from the actual built artifact.
+const { outputFiles } = await build({
+  entryPoints: ['src/orca/panel-transport.ts'], bundle: true, platform: 'node',
+  target: 'node24', format: 'esm', write: false,
+});
+const { createPanelTransport } = await import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].contents).toString('base64')}`);
 
 const root = await mkdtemp(join(tmpdir(), 'beads-board-smoke-'));
 const projectPath = join(root, 'project');
@@ -31,7 +40,20 @@ activate({
   panels: { handle(name, handler) { assert.equal(name, 'beads'); request = handler; } },
 });
 assert.equal(typeof request, 'function', 'built worker must register the Beads panel handler');
-const call = (method, input) => request({ method, project: 'smoke', input });
+const transport = createPanelTransport({
+  async call(method, params) {
+    assert.equal(method, 'plugin.request');
+    assert.equal(params.name, 'beads');
+    assert.equal(params.timeoutMs, 120_000);
+    const encodedInput = JSON.stringify(params.input);
+    assert.ok(Buffer.byteLength(encodedInput) <= 64 * 1024, 'native request must fit the 64 KiB input cap');
+    const output = await request(JSON.parse(encodedInput));
+    const encoded = JSON.stringify({ output });
+    assert.ok(Buffer.byteLength(encoded) < 1024 * 1024, 'native reply must fit the 1 MiB output cap');
+    return JSON.parse(encoded);
+  },
+});
+const call = (method, input) => transport.request({ method, project: 'smoke', input });
 try {
   execFileSync('git', ['init', '--quiet'], { cwd: projectPath });
   execFileSync('git', ['config', 'user.name', 'Beads Board Smoke'], { cwd: projectPath });
@@ -78,7 +100,7 @@ try {
   await call('comment', { id: dependent.id, text: 'Verified through real bd, not a mock.' });
   const comments = await call('comments', { id: dependent.id });
   assert.match(JSON.stringify(comments), /Verified through real bd/);
-  await assert.rejects(() => request({ method: 'snapshot', project: 'not-registered' }));
+  await assert.rejects(() => transport.request({ method: 'snapshot', project: 'not-registered' }));
   await mkdir(join(projectPath, 'docs'));
   const documentText = '# Acceptance\n\nVerify the visible result before closing the issue.\n';
   await writeFile(join(projectPath, 'docs/acceptance.md'), documentText);
@@ -109,5 +131,6 @@ try {
   console.log('PASS: directory-default suppression, singleton external edges, create, dependencies before/after close, ready/blocked transitions, claim, reopen, unlink, update, comments and registered-project selection.');
   if (process.argv.includes('--keep')) console.log(`Fixture retained: ${projectPath}`);
 } finally {
+  transport.dispose();
   if (!process.argv.includes('--keep')) await rm(root, { recursive: true, force: true });
 }

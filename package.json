@@ -1,6 +1,6 @@
 {
   "name": "@roflochinsky/beads-orca",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Beads Board plugin for Orca",
   "type": "module",

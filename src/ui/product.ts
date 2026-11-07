@@ -2,6 +2,7 @@ import type { Issue, Project, Snapshot, Transport } from '../shared.js';
 import type { DocumentLink, DocumentOpenResult, DocumentResult, FilterCriteria, FilterListResult, SavedFilter } from '../orca/library.js';
 import type { AgentDiscovery, HandoffGroup, HandoffPreview, HistoryEntry, HistoryExport, WorktreePreview, WorkflowInputs, WorkflowMethod, WorkflowResults } from '../orca/workflow-types.js';
 import { documentLines, documentRange } from '../orca/workflow-validation.js';
+import { icon } from './icons.js';
 
 type PoolItem = { project: string; id: string; title: string };
 type DraftGroup = { key: number; project: string; tasks: PoolItem[]; target: string; kind: 'new' | 'existing'; recipient: string; mode: 'implementation' | 'research' };
@@ -15,6 +16,7 @@ type Context = {
   snapshot(): Snapshot | null;
   pool(): PoolItem[];
   currentUnavailable(): boolean;
+  projectAvailability(project: Project): string;
   addTask(item: PoolItem): void;
   removeTask(project: string, id: string): void;
   criteria(): FilterCriteria;
@@ -106,12 +108,12 @@ export function createProductUI(context: Context) {
 
   function projectName(id: string): string {
     const project = context.projects().find((item) => item.id === id);
-    return project ? `${project.name} · ${project.hostName || project.hostId || 'local'}` : id;
+    return project ? `${project.path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || project.name} · ${project.workspaceId ? project.name : 'Additional path'} · ${project.hostName || project.hostId || 'Local'}` : id;
   }
 
   function projectStatus(id: string): string {
     const project = context.projects().find((item) => item.id === id);
-    return `${projectName(id)}${project?.path ? ` · ${project.path}` : ''} · ${isUnavailable(id) ? project?.availability === 'unsupported' ? 'unsupported' : 'unavailable or offline' : project?.availability || 'unknown'}`;
+    return `${projectName(id)}${project?.path ? ` · ${project.path} · ${context.projectAvailability(project)}` : ''}`;
   }
 
   function portableHostName(project: Project): string {
@@ -192,7 +194,7 @@ export function createProductUI(context: Context) {
   }
 
   function controls(): string {
-    return `<button class="btn btn--outlined btn--sm" type="button" data-product-action="handoff"${context.pool().length ? '' : ' disabled'}>Handoff (${context.pool().length})</button><button class="btn btn--text btn--sm" type="button" data-product-action="filters">Saved filters</button><button class="btn btn--text btn--sm" type="button" data-product-action="history">History</button><button class="btn btn--text btn--sm" type="button" data-product-action="worktree"${context.projectId() ? '' : ' disabled'}>Worktree</button><button class="btn btn--text btn--sm" type="button" data-product-action="hosts">Hosts</button>`;
+    return `<button class="btn btn--outlined btn--sm" type="button" data-product-action="handoff"${context.pool().length ? '' : ' disabled'}>Handoff${context.pool().length ? ` (${context.pool().length})` : ''}</button><details class="workflow-menu" data-persist="workflow-menu"><summary class="btn btn--text btn--sm" data-focus="workflows">Workflows${icon('arrow_drop_down')}</summary><div class="workflow-menu__panel" aria-label="Workflows"><button class="btn btn--text btn--sm" type="button" data-product-action="filters">Saved filters</button><button class="btn btn--text btn--sm" type="button" data-product-action="history">History</button><button class="btn btn--text btn--sm" type="button" data-product-action="worktree"${context.projectId() ? '' : ' disabled'}>Worktree</button><button class="btn btn--text btn--sm" type="button" data-product-action="hosts">Hosts</button></div></details>`;
   }
 
   async function loadDocuments(project: string, issue: string, version = ''): Promise<void> {
@@ -313,7 +315,7 @@ export function createProductUI(context: Context) {
       const entries = hosts.get(host) || []; entries.push(project); hosts.set(host, entries);
     }
     const current = context.projects().find((project) => project.current === true);
-    return `<p class="muted">Projects are read on their own host. Offline snapshots are read-only; unsupported hosts remain visible.</p>${current ? `<button type="button" class="btn btn--outlined btn--sm" data-product-action="host-project" data-id="${escape(current.id)}">View current workspace · ${escape(current.name)}</button>` : '<p class="muted">Current workspace could not be identified unambiguously.</p>'}${[...hosts].map(([host, projects]) => `<section class="product-section"><h3>${escape(host)}</h3><ul class="product-list">${projects.map((project) => `<li><div><strong>${escape(project.name)}</strong> ${project.current ? '<span class="muted">Current workspace</span>' : ''}<p class="muted">${escape(project.path)} · ${escape(project.availability || 'unknown')}${project.lastFetchedAt ? ` · last fetched ${escape(project.lastFetchedAt)}` : ''}${project.availabilityReason ? ` · ${escape(project.availabilityReason)}` : ''}${project.cacheError ? ` · Offline cache unavailable: ${escape(project.cacheError)}` : ''}</p></div><button type="button" class="btn btn--text btn--sm" data-product-action="host-project" data-id="${escape(project.id)}">View project</button></li>`).join('')}</ul></section>`).join('') || '<p class="muted">No projects available.</p>'}`;
+    return `<p class="muted">Projects are read on their own host. Offline snapshots are read-only; unsupported hosts remain visible.</p>${current ? `<button type="button" class="btn btn--outlined btn--sm" data-product-action="host-project" data-id="${escape(current.id)}">View current workspace · ${escape(current.name)}</button>` : '<p class="muted">Current workspace could not be identified unambiguously.</p>'}${[...hosts].map(([host, projects]) => `<section class="product-section"><h3>${escape(host)}</h3><ul class="product-list">${projects.map((project) => `<li><div><strong>${escape(project.name)}</strong> ${project.current ? '<span class="muted">Current workspace</span>' : ''}<p class="muted">${escape(project.path)} · ${escape(context.projectAvailability(project))}${project.lastFetchedAt ? ` · last fetched ${escape(project.lastFetchedAt)}` : ''}${project.availabilityReason ? ` · ${escape(project.availabilityReason)}` : ''}${project.cacheError ? ` · Offline cache unavailable: ${escape(project.cacheError)}` : ''}</p></div><button type="button" class="btn btn--text btn--sm" data-product-action="host-project" data-id="${escape(project.id)}">View project</button></li>`).join('')}</ul></section>`).join('') || '<p class="muted">No projects available.</p>'}`;
   }
 
   function dialog(): string {
