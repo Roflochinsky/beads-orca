@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.2 — Unreleased
+
+- Moved New issue into the workspace sidebar, with one visible creation action and the existing keyboard shortcut.
+- Added Epics below Views, descendant-aware filtering, explicit No epic, and portable project/host-qualified saved epic filters. Missing ancestry is not treated as No epic.
+- Status views now always open a table. All issues retains its Board/Table preference; counts share the same facets, and Include closed applies only to All issues.
+- Replaced whole-panel rebuilding with independently updated regions and measured, overscanned board/table windows. Filtering and selection still cover the complete snapshot.
+- Kept the detail close button visible, moved focus into details, restored focus on close, and made Escape close the foreground surface before clearing search.
+- Presented Markdown links as document tiles with filenames, independent Preview/Include actions and Show more. Clicking a tile opens the file in its Orca workspace editor, without a browser fallback.
+- Passed 91 tests, real-`bd` smoke, source/bundle validation and resource/checksum checks. This package is prepared locally, not published or installed in the user's profile.
+- Excluded local planning, review discussions and harness records from Git while retaining plugin code, CI and public technical documentation.
+
 ## 0.2.1 — 2026-11-07
 
 - Fixed large snapshots rejected by Orca's 1 MiB native reply limit. A bounded, identity-checked transfer protocol reconstructs complete replies without truncation or automatic application retries.
@@ -11,7 +22,7 @@
 
 ## 0.2.0 — 2026-11-07
 
-Published at the owner's explicit request with the known existing-session limitation retained. This release is not full Q1–Q24 acceptance. Install from `https://github.com/Roflochinsky/beads-orca#v0.2.0`; runtime source is unchanged from the tested preview.
+Published with the known existing-session limitation retained. Install from `https://github.com/Roflochinsky/beads-orca#v0.2.0`; runtime source is unchanged from the tested preview.
 
 - Added native workspace/host identities, explicit `remoteHosts` SSH configuration, same-host source/target checks, and timestamped offline snapshot caching with writes disabled. Unsupported paired hosts remain visible; SSH access does not inherit Orca credentials.
 - Added cross-project task selection and explicit handoff groups, blocker-aware implementation/research previews, actionable stale-preview rejection with changed categories/IDs/paths, and a distinct declared Claim actor per handoff. Rejected previews require explicit renewal; Claim instructions do not enforce agent behavior.
@@ -19,7 +30,7 @@ Published at the owner's explicit request with the known existing-session limita
 - Added linked/manual Markdown read/open and explicit whole-file or inclusive line-range context with full-file hash revalidation, personal filters and explicit `.beads-orca/filters.json` publication, private chunked history with export/import/delete, and inert unverified imported archives.
 - Added native worktree preview/create with setup skipped, full-context artifacts for long prompts, validated per-task report loading, reported-file navigation, explicit concise Beads publication, and separate artifact cleanup. No automatic task close, merge, push, or worktree deletion.
 - Kept existing-session dispatch disabled: Orca 1.4.250 and inspected upstream 1.4.252 lack an atomic native idle-only submission gate. This remains an unwaived full-acceptance blocker.
-- Passed Ubuntu/macOS CI, Linux real-SSH/offline and native panel/worktree/fragment/stale-preview checks. Verified public Git installation of source commit `035d4a2a2448439a6127f2a5ad03cc6b36fd8963`. Kept synthetic launch-adapter evidence separate from actual model execution. Native Orca UI on macOS, real paired runtime and nondefault-profile dispatch remain unverified. See [acceptance status](docs/product-scope.md), [constraints](docs/integration-constraints.md), and [verification](docs/verification.md).
+- Passed Ubuntu/macOS CI, Linux real-SSH/offline and native panel/worktree/fragment/stale-preview checks. Verified public Git installation of source commit `035d4a2a2448439a6127f2a5ad03cc6b36fd8963`. Kept synthetic launch-adapter evidence separate from actual model execution. Native Orca UI on macOS, real paired runtime and nondefault-profile dispatch remain unverified. See [integration constraints](docs/integration-constraints.md).
 - Fixed non-JSON optional snapshot fields, opaque native CLI refusal messages, headless browser confirmations, and handoff controls changing while recipient discovery or preview was in progress.
 
 ## 0.1.2 — 2026-11-06
@@ -45,4 +56,4 @@ Published at the owner's explicit request with the known existing-session limita
 
 Initial combined release, before repository ownership was separated. Orca included real Beads create, update, claim, close, reopen, reclaim, dependency and comment operations, board/table views, native readiness filters, keyboard actions and guarded close undo. Singleton native dependency edges, directory-default filtering suppression and search focus fixes are retained in 0.1.1. Historical non-Orca delivery and its documentation now belong to [beads-hud/native](https://github.com/Roflochinsky/beads-hud/tree/main/native).
 
-Known runtime limits and the distinction between pre-migration evidence and current verification are recorded in [docs/verification.md](docs/verification.md).
+Known runtime limits are documented in [integration constraints](docs/integration-constraints.md).

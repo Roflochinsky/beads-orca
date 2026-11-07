@@ -112,6 +112,33 @@ test('personal saved filters remain dynamic, survive a service restart, and dele
   });
 });
 
+test('personal epic filters retain their qualifiers and All layout preference across a restart', async () => {
+  await fixture(async ({ host, library }) => {
+    const targeted: SavedFilter = {
+      ...readyFilter, id: 'epic-filter',
+      criteria: {
+        ...readyFilter.criteria, view: 'closed', layout: 'board', showClosed: false,
+        epic: { id: 'example-epic', projectName: 'Example', hostName: 'Local' },
+      },
+    };
+    const noEpic: SavedFilter = {
+      ...targeted, id: 'no-epic-filter',
+      criteria: { ...targeted.criteria, epic: { id: null, projectName: 'Example', hostName: 'Local' } },
+    };
+    for (const filter of [readyFilter, targeted, noEpic]) {
+      assert.deepEqual(await library.request({ method: 'filters.save', input: { scope: 'personal', filter } }), filter);
+    }
+    const unset: SavedFilter = { ...readyFilter, id: 'unset-epic' };
+    assert.deepEqual(await library.request({
+      method: 'filters.save', input: { scope: 'personal', filter: { ...unset, criteria: { ...unset.criteria, epic: undefined } } },
+    }), unset);
+    const restarted = new LibraryService(host, new ProjectAccess(host));
+    assert.deepEqual(await restarted.request({ method: 'filters.list' }), {
+      personal: [readyFilter, targeted, noEpic, unset], project: [],
+    });
+  });
+});
+
 test('concurrent personal saves retain both filters', async () => {
   await fixture(async ({ library }) => {
     const second: SavedFilter = { ...readyFilter, id: 'second', name: 'Second' };
@@ -135,6 +162,71 @@ test('project filters are published explicitly as a portable reviewed file, and 
     await restarted.request({ method: 'filters.publish', project: 'workspace-one', input: { filter: changed } });
     assert.deepEqual(await restarted.request({ method: 'filters.delete', project: 'workspace-one', input: { scope: 'project', id: changed.id } }), { deleted: true });
     assert.deepEqual(await restarted.request({ method: 'filters.list', project: 'workspace-one' }), { personal: [readyFilter], project: [] });
+  });
+});
+
+test('published epic filters keep their qualifiers and legacy filters across a restart', async () => {
+  await fixture(async ({ root, host, library }) => {
+    const targeted: SavedFilter = {
+      ...readyFilter, id: 'epic-filter',
+      criteria: {
+        ...readyFilter.criteria, view: 'blocked', layout: 'board', showClosed: false,
+        epic: { id: 'example-epic', projectName: 'Example', hostName: 'Local' },
+      },
+    };
+    const noEpic: SavedFilter = {
+      ...targeted, id: 'no-epic-filter',
+      criteria: { ...targeted.criteria, epic: { id: null, projectName: 'Example', hostName: 'Local' } },
+    };
+    for (const filter of [readyFilter, targeted, noEpic]) {
+      assert.deepEqual(await library.request({ method: 'filters.publish', project: 'workspace-one', input: { filter } }), filter);
+    }
+    const restarted = new LibraryService(host, new ProjectAccess(host));
+    assert.deepEqual(await restarted.request({ method: 'filters.list', project: 'workspace-one' }), {
+      personal: [], project: [readyFilter, targeted, noEpic],
+    });
+    assert.deepEqual(JSON.parse(await readFile(join(root, '.beads-orca', 'filters.json'), 'utf8')), {
+      version: 1, filters: [readyFilter, targeted, noEpic],
+    });
+  });
+});
+
+test('malformed epic criteria are rejected before personal or project filters are written', async () => {
+  await fixture(async ({ root, host, library }) => {
+    await library.request({ method: 'filters.save', input: { scope: 'personal', filter: readyFilter } });
+    await library.request({ method: 'filters.publish', project: 'workspace-one', input: { filter: readyFilter } });
+    const path = join(root, '.beads-orca', 'filters.json');
+    const before = await readFile(path, 'utf8');
+    const call = host.host.call;
+    let storageWrites = 0;
+    host.host.call = async (method, params) => {
+      if (method === 'storage.set') storageWrites++;
+      return call(method, params);
+    };
+    const valid = { id: 'example-epic', projectName: 'Example', hostName: 'Local' };
+    const invalid: unknown[] = [
+      null, [], 'example-epic', {},
+      { projectName: 'Example', hostName: 'Local' },
+      { id: null, hostName: 'Local' },
+      { id: null, projectName: 'Example' },
+      { ...valid, id: 123 }, { ...valid, id: '' }, { ...valid, id: 'bad\0id' },
+      { ...valid, id: 'x'.repeat(65537) },
+      { ...valid, projectName: '' }, { ...valid, projectName: 'bad\0project' },
+      { ...valid, projectName: 'x'.repeat(65537) },
+      { ...valid, hostName: ' ' }, { ...valid, hostName: 'bad\0host' },
+      { ...valid, hostName: 'x'.repeat(65537) },
+      { ...valid, workspaceId: 'workspace-one' },
+    ];
+    for (const epic of invalid) {
+      const filter = { ...readyFilter, id: 'invalid', criteria: { ...readyFilter.criteria, epic } };
+      await assert.rejects(library.request({ method: 'filters.save', input: { scope: 'personal', filter } }), /epic|field/i);
+      await assert.rejects(library.request({ method: 'filters.publish', project: 'workspace-one', input: { filter } }), /epic|field/i);
+      assert.equal(await readFile(path, 'utf8'), before);
+    }
+    assert.equal(storageWrites, 0);
+    assert.deepEqual(await library.request({ method: 'filters.list', project: 'workspace-one' }), {
+      personal: [readyFilter], project: [readyFilter],
+    });
   });
 });
 
@@ -166,12 +258,113 @@ test('publication refuses private paths, connection identifiers and credentials 
   });
 });
 
+test('published epic qualifiers require a registered project and host pair and contain no private data', async () => {
+  await fixture(async ({ root, host, library }) => {
+    const call = host.host.call;
+    host.host.call = async (method, params) => method === 'workspace.list'
+      ? { workspaces: [
+        { id: 'workspace-one', name: 'Example', path: root, hostId: null },
+        { id: 'workspace-two', name: 'Remote Project', path: '/remote/project', hostId: 'ssh:private-connection' },
+      ], truncated: false }
+      : call(method, params);
+    host.settings.get = async (key) => key === 'remoteHosts'
+      ? JSON.stringify({ 'ssh:private-connection': { destination: 'example', name: 'Build host' } })
+      : '';
+    const valid = { id: 'example-epic', projectName: 'Example', hostName: 'Local' };
+    const filter: SavedFilter = { ...readyFilter, criteria: { ...readyFilter.criteria, epic: valid } };
+    await library.request({ method: 'filters.publish', project: 'workspace-one', input: { filter } });
+    const remote: SavedFilter = {
+      ...filter, id: 'remote-epic-filter',
+      criteria: {
+        ...filter.criteria, projectNames: ['Remote Project'], hostNames: ['Build host'],
+        epic: { id: 'remote-epic', projectName: 'Remote Project', hostName: 'Build host' },
+      },
+    };
+    assert.deepEqual(await library.request({ method: 'filters.publish', project: 'workspace-one', input: { filter: remote } }), remote);
+    const path = join(root, '.beads-orca', 'filters.json');
+    const before = await readFile(path, 'utf8');
+    for (const epic of [
+      { ...valid, projectName: 'Unknown project' },
+      { ...valid, hostName: 'Unknown host' },
+      { ...valid, hostName: 'Build host' },
+      { ...valid, projectName: 'Remote Project', hostName: 'Local' },
+      { ...valid, id: 'workspace-one' },
+      { ...valid, id: 'prefix workspace-one suffix' },
+      { ...valid, id: 'workspace:private' },
+      { ...valid, id: 'host:private' },
+      { ...valid, id: '/home/alice/private' },
+      { ...valid, id: 'password=hunter2' },
+      { ...valid, id: 'ssh:private-connection' },
+      { ...valid, projectName: '/home/alice/private' },
+      { ...valid, projectName: 'workspace-one' },
+      { ...valid, projectName: 'workspace:private' },
+      { ...valid, hostName: 'token=secret' },
+      { ...valid, hostName: 'host:private' },
+      { ...valid, hostName: 'ssh:private-connection' },
+    ]) {
+      const invalid = { ...filter, criteria: { ...filter.criteria, epic } };
+      await assert.rejects(
+        library.request({ method: 'filters.publish', project: 'workspace-one', input: { filter: invalid } }),
+        /portable|scope|private|credential|path|id/i,
+      );
+      assert.equal(await readFile(path, 'utf8'), before);
+    }
+    assert.deepEqual(await library.request({ method: 'filters.list', project: 'workspace-one' }), {
+      personal: [], project: [filter, remote],
+    });
+  });
+});
+
+test('project changes do not republish existing private IDs in any epic qualifier field', async () => {
+  await fixture(async ({ root, library }) => {
+    await mkdir(join(root, '.beads-orca'));
+    const path = join(root, '.beads-orca', 'filters.json');
+    for (const field of ['id', 'projectName', 'hostName'] as const) {
+      const epic = { id: 'example-epic', projectName: 'Example', hostName: 'Local', [field]: 'prefix workspace-one suffix' };
+      const existing = { ...readyFilter, id: 'existing', criteria: { ...readyFilter.criteria, epic } };
+      const original = JSON.stringify({ version: 1, filters: [readyFilter, existing] });
+      await writeFile(path, original);
+      await assert.rejects(
+        library.request({ method: 'filters.publish', project: 'workspace-one', input: { filter: readyFilter } }),
+        /private|id/i,
+      );
+      assert.equal(await readFile(path, 'utf8'), original);
+      await assert.rejects(
+        library.request({ method: 'filters.delete', project: 'workspace-one', input: { scope: 'project', id: readyFilter.id } }),
+        /private|id/i,
+      );
+      assert.equal(await readFile(path, 'utf8'), original);
+    }
+  });
+});
+
 test('publication refuses to overwrite malformed project settings', async () => {
   await fixture(async ({ root, library }) => {
     await mkdir(join(root, '.beads-orca'));
     await writeFile(join(root, '.beads-orca', 'filters.json'), '{ broken');
     await assert.rejects(library.request({ method: 'filters.publish', project: 'workspace-one', input: { filter: readyFilter } }), /filter|json|format/i);
     assert.equal(await readFile(join(root, '.beads-orca', 'filters.json'), 'utf8'), '{ broken');
+  });
+});
+
+test('malformed saved epic qualifiers cannot be listed or overwritten', async () => {
+  await fixture(async ({ root, library }) => {
+    await mkdir(join(root, '.beads-orca'));
+    const path = join(root, '.beads-orca', 'filters.json');
+    const malformed = {
+      ...readyFilter, criteria: {
+        ...readyFilter.criteria,
+        epic: { id: null, projectName: 'Example', hostName: 'Local', workspaceId: 'workspace-one' },
+      },
+    };
+    const original = JSON.stringify({ version: 1, filters: [malformed] });
+    await writeFile(path, original);
+    await assert.rejects(library.request({ method: 'filters.list', project: 'workspace-one' }), /epic|field/i);
+    await assert.rejects(
+      library.request({ method: 'filters.publish', project: 'workspace-one', input: { filter: readyFilter } }),
+      /epic|field/i,
+    );
+    assert.equal(await readFile(path, 'utf8'), original);
   });
 });
 

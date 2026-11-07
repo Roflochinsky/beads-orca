@@ -8,3 +8,14 @@ release/
 .DS_Store
 artifacts/
 design-reference/.impeccable/
+
+# Local planning, review discussions and agent tooling; not plugin resources.
+/.scratch/
+/.harness/
+/.impeccable/
+/docs/internal/
+/docs/product-scope.md
+/docs/verification.md
+/docs/adr/
+/docs/ui-review-*.md
+/src/ui/*-prototype.html

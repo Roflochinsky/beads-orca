@@ -1,6 +1,6 @@
 # Native Beads core
 
-`service.ts` exports `handleRequest(request, projects, target?)`. Hosts provide trusted `Project` records and, for a remote project, an explicit `SshTarget` (`destination`, optional absolute `configFile`); requests select an **ID**, never a filesystem path or SSH connection. This module requires Node 24 on the desktop and the installed `bd` CLI on the execution host's PATH. The command surface was inspected against `bd version 1.3.2 (9b65b9e19: HEAD@9b65b9e198ac)` using `bd schema` and each command's `--help`. Remote transport is part of local **0.2.0 UNRELEASED** source, not the public stable v0.1.2 installation.
+`service.ts` exports `handleRequest(request, projects, target?)`. Hosts provide trusted `Project` records and, for a remote project, an explicit `SshTarget` (`destination`, optional absolute `configFile`); requests select an **ID**, never a filesystem path or SSH connection. This module requires Node 24 on the desktop and the installed `bd` CLI on the execution host's PATH. The command surface was inspected against `bd version 1.3.2 (9b65b9e19: HEAD@9b65b9e198ac)` using `bd schema` and each command's `--help`.
 
 ## Workspace and execution boundary
 
@@ -58,7 +58,7 @@ The inspected release source is `gastownhall/beads` **v1.3.2**, commit `9b65b9e1
 
 ## Verification
 
-The 11 core tests and real-bd smoke passed after the historical Orca-only 0.1.1 split. The unreleased integration record additionally reports real local-bd smoke and isolated real-SSH/offline checks, with a 60-test checkpoint before later integration changes. Final integrated verification is pending; exact observed evidence and remaining model/macOS/paired/install limits are in [verification](../../docs/verification.md).
+The automated checks below exercise the adapter contract. They do not establish actual model execution, native macOS UI behavior or real paired-host compatibility.
 
 `tests/core.test.ts` covers the public request seam with an external fake `bd` process: project/input restrictions, 201-row snapshots ending with a singleton external-only edge batch, detail raw-edge precedence, directory-default suppression without losing labels, native ready/blocked membership, closed and hidden statuses, field normalization, empty/malformed/oversized/error output, ambient selector handling with preserved credentials/actor, registered-ID precheck refusal, and same-workspace process serialization. These tests do not establish atomic isolation from external writers.
 

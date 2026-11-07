@@ -21,6 +21,8 @@ export type FilterCriteria = {
   sortDirection: 'ascending' | 'descending';
   projectNames: string[];
   hostNames: string[];
+  /** Omitted selects all epics; a null ID selects issues without an epic. */
+  epic?: { id: string | null; projectName: string; hostName: string };
 };
 export type SavedFilter = { id: string; name: string; criteria: FilterCriteria };
 export type FilterListResult = { personal: SavedFilter[]; project: SavedFilter[] };
@@ -106,9 +108,19 @@ function savedFilter(value: unknown): SavedFilter {
   const criteria = record(filter.criteria, 'filter criteria');
   exactKeys(criteria, [
     'query', 'view', 'layout', 'typeFilter', 'priorityFilter', 'assigneeFilter', 'showClosed',
-    'sortKey', 'sortDirection', 'projectNames', 'hostNames',
+    'sortKey', 'sortDirection', 'projectNames', 'hostNames', 'epic',
   ], 'filter criteria');
   if (typeof criteria.showClosed !== 'boolean') throw new Error('showClosed must be a boolean');
+  let epic: FilterCriteria['epic'];
+  if (criteria.epic !== undefined) {
+    const value = record(criteria.epic, 'epic filter');
+    exactKeys(value, ['id', 'projectName', 'hostName'], 'epic filter');
+    epic = {
+      id: value.id === null ? null : filterString(value.id, 'epic ID', true),
+      projectName: filterString(value.projectName, 'epic projectName', true),
+      hostName: filterString(value.hostName, 'epic hostName', true),
+    };
+  }
   return {
     id: filterString(filter.id, 'filter ID', true),
     name: filterString(filter.name, 'filter name', true),
@@ -124,6 +136,7 @@ function savedFilter(value: unknown): SavedFilter {
       sortDirection: choice(criteria.sortDirection, 'sortDirection', ['ascending', 'descending']),
       projectNames: filterNames(criteria.projectNames, 'projectNames'),
       hostNames: filterNames(criteria.hostNames, 'hostNames'),
+      ...(epic === undefined ? {} : { epic }),
     },
   };
 }
@@ -139,12 +152,22 @@ function filterArray(value: unknown): SavedFilter[] {
   return filters;
 }
 
-function assertPortableFilter(filter: SavedFilter): void {
+function filterStrings(filter: SavedFilter): string[] {
   const criteria = filter.criteria;
   const strings = [
     filter.id, filter.name, criteria.query, criteria.typeFilter, criteria.priorityFilter, criteria.assigneeFilter,
     ...criteria.projectNames, ...criteria.hostNames,
   ];
+  if (criteria.epic) {
+    if (criteria.epic.id !== null) strings.push(criteria.epic.id);
+    strings.push(criteria.epic.projectName, criteria.epic.hostName);
+  }
+  return strings;
+}
+
+function assertPortableFilter(filter: SavedFilter): void {
+  const criteria = filter.criteria;
+  const strings = filterStrings(filter);
   // This is a guard against common accidental disclosure, not a secret scanner:
   // users must still review the project file before sharing it.
   const privatePath = /(?:^|[\s"'=(,:])(?:~[A-Za-z0-9_.-]*[\\/]|[A-Za-z]:[\\/]|\/(?!\/)|\\\\)\S*/u;
@@ -153,7 +176,9 @@ function assertPortableFilter(filter: SavedFilter): void {
     throw new Error('Project filters cannot contain private paths or credentials; review the portable filter');
   }
   if (strings.some((value) => /(?:^|[\s"'=(,])(?:ssh|wsl|runtime|paired):\S+/iu.test(value))
-    || [...criteria.projectNames, ...criteria.hostNames].some((name) => /^(?:host|workspace):/iu.test(name))) {
+    || [...criteria.projectNames, ...criteria.hostNames].some((name) => /^(?:host|workspace):/iu.test(name))
+    || (criteria.epic && [criteria.epic.id, criteria.epic.projectName, criteria.epic.hostName]
+      .some((value) => value !== null && /^(?:host|workspace):/iu.test(value)))) {
     throw new Error('Project filter scopes must use portable names, not connection or workspace IDs');
   }
 }
@@ -328,8 +353,11 @@ export class LibraryService {
     if (published) {
       const projectNames = new Set(projects.map((project) => project.name));
       const hostNames = new Set(projects.map((project) => project.hostName || (project.hostId == null || project.hostId === 'local' ? 'Local' : '')));
+      const epic = published.criteria.epic;
       if (published.criteria.projectNames.some((name) => !projectNames.has(name))
-        || published.criteria.hostNames.some((name) => !hostNames.has(name))) {
+        || published.criteria.hostNames.some((name) => !hostNames.has(name))
+        || (epic !== undefined && !projects.some((project) => project.name === epic.projectName
+          && (project.hostName || (project.hostId == null || project.hostId === 'local' ? 'Local' : '')) === epic.hostName))) {
         throw new Error('Project filter scope must use registered portable project and host display names');
       }
     }
@@ -339,12 +367,7 @@ export class LibraryService {
       project.hostId === 'local' ? '' : project.hostId,
     ]).filter((id): id is string => typeof id === 'string' && id.length > 0);
     for (const filter of filters) {
-      const values = [
-        filter.id, filter.name, filter.criteria.query, filter.criteria.typeFilter,
-        filter.criteria.priorityFilter, filter.criteria.assigneeFilter,
-        ...filter.criteria.projectNames, ...filter.criteria.hostNames,
-      ];
-      if (values.some((value) => privateIds.some((id) => value === id || (id.length >= 6 && value.includes(id))))) {
+      if (filterStrings(filter).some((value) => privateIds.some((id) => value === id || (id.length >= 6 && value.includes(id))))) {
         throw new Error('Project filters cannot contain private workspace or connection IDs');
       }
     }

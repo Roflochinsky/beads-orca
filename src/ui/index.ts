@@ -1,8 +1,12 @@
 import type { Issue, Project, Snapshot, Transport } from '../shared.js';
 import { icon } from './icons.js';
 import { createProductUI } from './product.js';
+import { createIssueModel, issueGroupOrder, portableHostName, resolveEpicProject, selectIssues, virtualRange } from './model.js';
+import type { IssueGroup, IssueModel } from './model.js';
+import type { FilterCriteria } from '../orca/library.js';
 
-type Group = 'ready' | 'active' | 'blocked' | 'closed' | 'deferred' | 'other';
+type Group = IssueGroup;
+
 type Draft = { title: string; description: string; type: string; priority: string; assignee: string; labels: string };
 type EditValues = { title: string; description: string; priority: string; assignee: string; notes: string; acceptance: string; design: string };
 type EditDraft = { baseline: EditValues; values: EditValues };
@@ -12,7 +16,7 @@ type SortKey = 'status' | 'id' | 'title' | 'priority' | 'relationships' | 'assig
 const groupNames: Record<Group, string> = {
   ready: 'Ready', active: 'In progress', blocked: 'Blocked', closed: 'Closed', deferred: 'Deferred', other: 'Other',
 };
-const groupOrder: Group[] = ['ready', 'active', 'blocked', 'closed', 'deferred', 'other'];
+const groupOrder = issueGroupOrder;
 const types = ['task', 'bug', 'feature', 'chore', 'epic', 'decision', 'spike', 'story', 'milestone'];
 const typeIcons: Record<string, string> = {
   task: 'task_alt', bug: 'bug_report', feature: 'lightbulb', chore: 'handyman', epic: 'stacks',
@@ -90,9 +94,12 @@ export function mount(root: HTMLElement, transport: Transport): void {
   let projectId = '';
   let snapshot: Snapshot | null = null;
   let issueIndex = new Map<string, Issue>();
-  let readyIds = new Set<string>();
   let blockedIds = new Set<string>();
-  let filteredCache: Issue[] | null = null;
+  let model: IssueModel | null = null;
+  let modelSignature = '';
+  let modelVersion = 0;
+  let filterCacheKey = '';
+  let filterCache: { counts: Record<Group | 'all', number>; visible: Issue[] } | null = null;
   let loadingProjects = true;
   let loadingSnapshot = false;
   let connectionLost = false;
@@ -116,13 +123,16 @@ export function mount(root: HTMLElement, transport: Transport): void {
   let typeFilter = '';
   let priorityFilter = '';
   let assigneeFilter = '';
-  let showClosed = true;
+  let showClosed = false;
+  let epicFilter: FilterCriteria['epic'];
+  let epicSearch = '';
   let filtersExpanded = false;
   let scope: { projectNames: string[]; hostNames: string[] } | null = null;
   let createOpen = false;
   let draft = emptyDraft();
   let dependencyId = '';
   let dependencyType = 'blocks';
+  let dependencySearch = '';
   let sortKey: SortKey = 'status';
   let sortDirection: 'ascending' | 'descending' = 'ascending';
   let spotlightOn = true;
@@ -139,11 +149,8 @@ export function mount(root: HTMLElement, transport: Transport): void {
   let undoClose: { project: string; id: string; updatedAt: string; closedAt?: string } | null = null;
   let projectLoadTask: Promise<void> | null = null;
   let snapshotGeneration = 0;
+  let detailOrigin: HTMLElement | null = null;
   let projectsReloadPending = false;
-  function portableHostName(project: Project): string {
-    if (!project.hostId || project.hostId === 'local') return project.hostName || 'Local';
-    return project.hostName && project.hostName !== project.hostId ? project.hostName : '';
-  }
   function inScope(project: Project, criteria: { projectNames: string[]; hostNames: string[] } | null): boolean {
     return !criteria || ((!criteria.projectNames.length || criteria.projectNames.includes(project.name))
       && (!criteria.hostNames.length || criteria.hostNames.includes(portableHostName(project))));
@@ -163,47 +170,46 @@ export function mount(root: HTMLElement, transport: Transport): void {
       const project = projects.find((item) => item.id === projectId);
       return { query, view, layout, typeFilter, priorityFilter, assigneeFilter, showClosed, sortKey, sortDirection,
         projectNames: scope ? [...scope.projectNames] : project ? [project.name] : [],
-        hostNames: scope ? [...scope.hostNames] : project && portableHostName(project) ? [portableHostName(project)] : [] };
+        hostNames: scope ? [...scope.hostNames] : project && portableHostName(project) ? [portableHostName(project)] : [],
+        ...(epicFilter ? { epic: { ...epicFilter } } : {}) };
     },
     applyCriteria: (criteria) => {
-      const match = projects.find((project) => project.id === projectId && inScope(project, criteria))
+      const epicResolution = criteria.epic ? resolveEpicProject(projects, criteria.epic) : null;
+      if (epicResolution && epicResolution.kind !== 'matched') {
+        actionError = epicResolution.kind === 'ambiguous' ? 'The saved epic matches multiple registered projects. Resolve the ambiguity before applying it.' : 'No registered project matches the saved epic’s project and host.';
+        return;
+      }
+      const match = epicResolution?.kind === 'matched' ? epicResolution.project : projects.find((project) => project.id === projectId && inScope(project, criteria))
         || projects.find((project) => inScope(project, criteria));
+      if (match && !inScope(match, criteria)) { actionError = 'The saved epic project is outside this filter scope.'; return; }
       if ((criteria.projectNames.length || criteria.hostNames.length) && !match) { actionError = 'No available project matches this filter scope.'; return; }
       scope = { projectNames: [...criteria.projectNames], hostNames: [...criteria.hostNames] };
       query = criteria.query; view = criteria.view; layout = criteria.layout; typeFilter = criteria.typeFilter;
       priorityFilter = criteria.priorityFilter; assigneeFilter = criteria.assigneeFilter; showClosed = criteria.showClosed;
       sortKey = criteria.sortKey; sortDirection = criteria.sortDirection;
-      if (match && match.id !== projectId) selectProject(match.id, false); else render();
+      epicFilter = criteria.epic ? { ...criteria.epic } : undefined;
+      if (match && match.id !== projectId) selectProject(match.id, false, true); else render();
     },
     selectProject: (id) => selectProject(id, false),
     reloadProjects: () => { void loadProjects(); },
     render,
   });
 
-  const groupOf = (issue: Issue): Group => {
-    if (issue.status === 'closed') return 'closed';
-    if (issue.status === 'blocked' || blockedIds.has(issue.id)) return 'blocked';
-    if (issue.status === 'deferred') return 'deferred';
-    if (issue.status === 'in_progress') return 'active';
-    if (readyIds.has(issue.id)) return 'ready';
-    return 'other';
-  };
+  const groupOf = (issue: Issue): Group => model?.groupOf(issue) ?? 'other';
   const allIssues = (): Issue[] => snapshot?.issues ?? [];
   const byId = (id: string): Issue | undefined => issueIndex.get(id);
   const relationships = (issue: Issue): string => issue.dependencies.map((dep) => `${dep.type}: ${dep.id}`).join(', ');
-  const filtered = (): Issue[] => {
-    const search = query.trim().toLocaleLowerCase();
-    return filteredCache ??= allIssues().filter((issue) => {
-      const group = groupOf(issue);
-      if (!showClosed && group === 'closed') return false;
-      if (view !== 'all' && group !== view) return false;
-      if (typeFilter && issue.type !== typeFilter) return false;
-      if (priorityFilter && String(issue.priority) !== priorityFilter) return false;
-      if (assigneeFilter && issue.assignee !== assigneeFilter) return false;
-      return !search || [issue.id, issue.title, issue.description, issue.assignee, ...issue.labels].join(' ').toLocaleLowerCase().includes(search);
-    }).sort((a, b) => groupOrder.indexOf(groupOf(a)) - groupOrder.indexOf(groupOf(b)) || a.priority - b.priority || a.id.localeCompare(b.id));
+  const selection = () => {
+    const key = JSON.stringify([modelVersion, query, typeFilter, priorityFilter, assigneeFilter, epicFilter?.id, !!epicFilter, view, showClosed]);
+    if (key !== filterCacheKey || !filterCache) {
+      filterCacheKey = key;
+      filterCache = model ? selectIssues(model, { query, typeFilter, priorityFilter, assigneeFilter, epic: epicFilter?.id, view, showClosed })
+        : { counts: { all: 0, ready: 0, active: 0, blocked: 0, closed: 0, deferred: 0, other: 0 }, visible: [] };
+    }
+    return filterCache;
   };
-  const count = (group: Group): number => allIssues().filter((issue) => groupOf(issue) === group).length;
+  const filtered = (): Issue[] => selection().visible;
+  const count = (group: Group | 'all'): number => selection().counts[group];
   const currentIssue = (): Issue | undefined => detail?.id === selectedId ? detail : byId(selectedId);
   const disabled = (): string => pending ? ' disabled' : '';
   const offline = (): boolean => connectionLost || !snapshot || !!snapshot.offline || snapshot.project.availability === 'offline' || snapshot.project.availability === 'unsupported';
@@ -255,7 +261,7 @@ export function mount(root: HTMLElement, transport: Transport): void {
   }
 
   function createButton(): string {
-    return `<button type="button" class="btn btn--primary" data-action="new"${disabled()}${projectId ? '' : ' disabled'}>${icon('add')}<span>New issue</span><kbd>N</kbd></button>`;
+    return `<button type="button" class="btn btn--primary" data-action="new" aria-label="New issue"${disabled()}${projectId ? '' : ' disabled'}>${icon('add')}<span>New issue</span><kbd>N</kbd></button>`;
   }
 
   function card(issue: Issue): string {
@@ -272,46 +278,148 @@ export function mount(root: HTMLElement, transport: Transport): void {
     </article>`;
   }
 
+  type WindowState = { items: Issue[]; heights: number[]; offsets: number[]; estimate: number; table: boolean };
+  const windows = new Map<string, WindowState>();
+  let windowFrame = 0;
+  let measureFrame = 0;
+  function registerWindow(key: string, items: Issue[], estimate: number, table: boolean): void {
+    const heights = items.map(() => estimate);
+    const offsets = [0];
+    for (const height of heights) offsets.push(offsets[offsets.length - 1]! + height);
+    windows.set(key, { items, heights, offsets, estimate, table });
+  }
   function tableContent(issues: Issue[]): string {
     const headers: Array<[SortKey, string]> = [
-      ['status', 'Status'], ['id', 'ID'], ['title', 'Title'], ['priority', 'Priority'],
-      ['relationships', 'Relationships'], ['assignee', 'Assignee'], ['type', 'Type'], ['epic', 'Epic'], ['labels', 'Labels'], ['updated', 'Updated'],
+      ['title', 'Title'], ['status', 'Status'], ['priority', 'Priority'], ['epic', 'Epic'],
+      ['assignee', 'Assignee'], ['type', 'Type'], ['relationships', 'Relationships'], ['labels', 'Labels'], ['updated', 'Updated'],
     ];
-    const epic = (issue: Issue): Issue | undefined => issue.dependencies
-      .filter((dep) => dep.type === 'parent-child')
-      .map((dep) => byId(dep.id)).find((parent) => parent?.type === 'epic');
     const value = (issue: Issue): string | number => {
       switch (sortKey) {
         case 'status': return groupOrder.indexOf(groupOf(issue));
         case 'priority': return issue.priority;
         case 'relationships': return relationships(issue);
-        case 'epic': return epic(issue)?.title || '';
+        case 'epic': return model?.epicFor(issue)?.title || '';
         case 'labels': return issue.labels.join(', ');
         case 'updated': return Date.parse(issue.updatedAt) || 0;
         default: return issue[sortKey];
       }
     };
     const sorted = [...issues].sort((a, b) => {
-      const left = value(a);
-      const right = value(b);
+      const left = value(a), right = value(b);
       const order = typeof left === 'number' && typeof right === 'number' ? left - right : String(left).localeCompare(String(right));
       return (sortDirection === 'ascending' ? order : -order) || a.priority - b.priority || a.id.localeCompare(b.id);
     });
-    return `<div class="table-wrap"><table class="issue-table"><thead><tr><th scope="col"><span class="visually-hidden">Select for handoff</span></th>${headers.map(([key, label]) => `<th scope="col" aria-sort="${key === sortKey ? sortDirection : 'none'}"><button class="table-sort" type="button" data-action="sort" data-value="${key}">${label}${key === sortKey ? `<span class="table-sort__arrow${sortDirection === 'ascending' ? ' table-sort__arrow--up' : ''}">${icon('arrow_drop_down')}</span>` : ''}</button></th>`).join('')}</tr></thead><tbody>${sorted.map((issue) => `<tr class="issue-table__row" data-id="${escapeHtml(issue.id)}" data-selected="${pressed(issue.id === selectedId)}"><td><input type="checkbox" data-change="pool" data-id="${escapeHtml(issue.id)}" aria-label="Select ${escapeHtml(issue.id)} for handoff"${taskPool.has(`${projectId}\0${issue.id}`) ? ' checked' : ''}></td><td>${bead(groupOf(issue))} ${escapeHtml(groupNames[groupOf(issue)])}</td><td class="mono">${escapeHtml(issue.id)}</td><td><button class="table-link" type="button" data-action="select" data-id="${escapeHtml(issue.id)}">${escapeHtml(issue.title)}</button><span class="issue-table__relation" hidden></span></td><td>${priority(issue)}</td><td class="mono">${escapeHtml(relationships(issue) || '—')}</td><td>${escapeHtml(issue.assignee || 'Unassigned')}</td><td>${escapeHtml(issue.type)}</td><td>${escapeHtml(epic(issue)?.title || '—')}</td><td>${issue.labels.map((label) => `<span class="chip chip--label">${escapeHtml(label)}</span>`).join(' ') || '—'}</td><td>${escapeHtml(relativeTime(issue.updatedAt))}</td></tr>`).join('')}</tbody></table></div>`;
+    registerWindow('table', sorted, 64, true);
+    return `<div class="table-wrap" data-window-container="table" role="region" aria-label="Issue table" tabindex="0"><table class="issue-table" aria-rowcount="${sorted.length + 1}"><thead><tr><th scope="col"><span class="visually-hidden">Select for handoff</span></th>${headers.map(([key, label]) => `<th scope="col" aria-sort="${key === sortKey || (key === 'title' && sortKey === 'id') ? sortDirection : 'none'}"><button class="table-sort" type="button" data-action="sort" data-value="${key}">${label}${key === sortKey ? `<span class="table-sort__arrow${sortDirection === 'ascending' ? ' table-sort__arrow--up' : ''}">${icon('arrow_drop_down')}</span>` : ''}</button>${key === 'title' ? ` <button class="table-sort table-sort--id" type="button" data-action="sort" data-value="id" aria-label="Sort by issue ID">ID${sortKey === 'id' ? `<span class="table-sort__arrow${sortDirection === 'ascending' ? ' table-sort__arrow--up' : ''}">${icon('arrow_drop_down')}</span>` : ''}</button>` : ''}</th>`).join('')}</tr></thead><tbody data-window-content="table"></tbody></table></div>`;
+  }
+  function tableRow(issue: Issue): string {
+    const group = groupOf(issue);
+    const epic = model?.epicFor(issue);
+    return `<tr class="issue-table__row" data-id="${escapeHtml(issue.id)}" data-selected="${pressed(issue.id === selectedId)}"><td><input type="checkbox" data-change="pool" data-id="${escapeHtml(issue.id)}" aria-label="Select ${escapeHtml(issue.id)} for handoff"${taskPool.has(`${projectId}\0${issue.id}`) ? ' checked' : ''}></td><td><button class="table-link" type="button" data-action="select" data-id="${escapeHtml(issue.id)}" aria-label="Open ${escapeHtml(issue.id)}: ${escapeHtml(issue.title)}">${escapeHtml(issue.title)}</button><span class="mono issue-table__id">${escapeHtml(issue.id)}${issue.type === 'epic' ? ' · Epic' : ''}</span><span class="issue-table__relation" hidden></span></td><td>${bead(group)} ${escapeHtml(groupNames[group])}</td><td>${priority(issue)}</td><td>${escapeHtml(epic?.title || '—')}</td><td>${escapeHtml(issue.assignee || 'Unassigned')}</td><td>${escapeHtml(issue.type)}</td><td>${escapeHtml(relationships(issue) || '—')}</td><td>${issue.labels.map((label) => `<span class="chip chip--label">${escapeHtml(label)}</span>`).join(' ') || '—'}</td><td>${escapeHtml(relativeTime(issue.updatedAt))}</td></tr>`;
+  }
+
+  function syncWindow(key: string): void {
+    const state = windows.get(key);
+    const container = root.querySelector<HTMLElement>(`[data-window-container="${key}"]`);
+    const content = root.querySelector<HTMLElement>(`[data-window-content="${key}"]`);
+    if (!state || !container || !content) return;
+    if (!state.table) content.setAttribute('role', 'list');
+    const range = virtualRange(state.offsets, container.scrollTop, container.clientHeight || 600, state.table ? 6 : 3);
+    const indices = new Set<number>();
+    for (let index = range.start; index < range.end; index++) indices.add(index);
+    const activeRow = document.activeElement instanceof Element ? document.activeElement.closest<HTMLElement>('[data-virtual-index]') : null;
+    if (activeRow && content.contains(activeRow)) indices.add(Number(activeRow.dataset.virtualIndex));
+    if (drag) {
+      const dragged = state.items.findIndex((issue) => issue.id === drag!.id);
+      if (dragged >= 0) indices.add(dragged);
+    }
+    const ordered = [...indices].filter((index) => index >= 0 && index < state.items.length).sort((a, b) => a - b);
+    for (const spacer of content.querySelectorAll('.virtual-spacer')) spacer.remove();
+    for (const row of content.querySelectorAll<HTMLElement>('[data-virtual-index]')) {
+      if (!indices.has(Number(row.dataset.virtualIndex))) row.remove();
+    }
+    const rows = new Map(Array.from(content.querySelectorAll<HTMLElement>('[data-virtual-index]'), (row) => [Number(row.dataset.virtualIndex), row]));
+    for (let position = 0; position < ordered.length; position++) {
+      const index = ordered[position]!;
+      if (rows.has(index)) continue;
+      const issue = state.items[index]!;
+      content.insertAdjacentHTML('beforeend', state.table ? tableRow(issue) : card(issue));
+      const row = content.lastElementChild as HTMLElement;
+      row.dataset.virtualIndex = String(index);
+      if (state.table) row.setAttribute('aria-rowindex', String(index + 2));
+      else {
+        row.setAttribute('role', 'listitem');
+        row.setAttribute('aria-posinset', String(index + 1));
+        row.setAttribute('aria-setsize', String(state.items.length));
+      }
+      const next = ordered.slice(position + 1).map((item) => rows.get(item)).find(Boolean);
+      if (next) content.insertBefore(row, next);
+      rows.set(index, row);
+    }
+    const addSpacer = (height: number, before: HTMLElement | null) => {
+      if (height <= 0) return;
+      const spacer = document.createElement(state.table ? 'tr' : 'div');
+      spacer.className = 'virtual-spacer';
+      spacer.setAttribute('aria-hidden', 'true');
+      if (state.table) {
+        const cell = document.createElement('td');
+        cell.colSpan = 10; cell.style.height = `${height}px`;
+        spacer.append(cell);
+      } else spacer.style.height = `${height}px`;
+      content.insertBefore(spacer, before);
+    };
+    let previous = 0;
+    for (const index of ordered) {
+      addSpacer(state.offsets[index]! - state.offsets[previous]!, rows.get(index)!);
+      previous = index + 1;
+    }
+    addSpacer(state.offsets[state.items.length]! - state.offsets[previous]!, null);
+    if (!measureFrame) measureFrame = requestAnimationFrame(measureWindows);
+  }
+
+  function measureWindows(): void {
+    measureFrame = 0;
+    let changed = false;
+    for (const [key, state] of windows) {
+      const container = root.querySelector<HTMLElement>(`[data-window-container="${key}"]`);
+      const content = root.querySelector<HTMLElement>(`[data-window-content="${key}"]`);
+      if (!container || !content) continue;
+      const anchor = virtualRange(state.offsets, container.scrollTop, 0, 0).start;
+      const oldAnchor = state.offsets[anchor] || 0;
+      let localChange = false;
+      for (const row of content.querySelectorAll<HTMLElement>('[data-virtual-index]')) {
+        const index = Number(row.dataset.virtualIndex);
+        const height = row.getBoundingClientRect().height + (state.table ? 0 : 8);
+        if (height > 0 && Math.abs(height - state.heights[index]!) > 0.5) { state.heights[index] = height; localChange = true; }
+      }
+      if (!localChange) continue;
+      state.offsets[0] = 0;
+      for (let index = 0; index < state.heights.length; index++) state.offsets[index + 1] = state.offsets[index]! + state.heights[index]!;
+      container.scrollTop += state.offsets[anchor]! - oldAnchor;
+      changed = true;
+    }
+    if (changed) scheduleWindows();
+  }
+
+  function scheduleWindows(): void {
+    if (!windowFrame) windowFrame = requestAnimationFrame(() => {
+      windowFrame = 0;
+      for (const key of windows.keys()) syncWindow(key);
+      applySpotlight();
+    });
   }
 
   function applySpotlight(): void {
     const id = hoverId || focusId || selectedId;
     const issue = byId(id);
     const relations = new Map<string, string>();
+    let geometryChanged = false;
     if (issue && spotlightOn) {
       for (const dep of issue.dependencies) {
         relations.set(dep.id, dep.type === 'blocks' ? 'Dependency · blocks' : dep.type === 'discovered-from' ? 'Found in' : dep.type);
       }
-      for (const other of allIssues()) {
-        for (const dep of other.dependencies) {
-          if (dep.id === id && !relations.has(other.id)) relations.set(other.id, dep.type === 'blocks' ? 'Depends on this · blocks' : dep.type);
-        }
+      for (const reference of model?.references.get(id) || []) {
+        if (!relations.has(reference.issue.id)) relations.set(reference.issue.id, reference.type === 'blocks' ? 'Depends on this · blocks' : reference.type);
       }
     }
     for (const element of root.querySelectorAll<HTMLElement>('.issue-card, .issue-table__row')) {
@@ -322,34 +430,48 @@ export function mount(root: HTMLElement, transport: Transport): void {
       element.classList.toggle('spotlight--chain', chain);
       element.classList.toggle('spotlight--dimmed', dimmed);
       const badge = element.querySelector<HTMLElement>('.issue-card__relation, .issue-table__relation');
-      if (badge) { badge.hidden = !chain; badge.textContent = relation; }
+      if (badge) {
+        if (badge.hidden !== !chain || badge.textContent !== relation) geometryChanged = true;
+        badge.hidden = !chain; badge.textContent = relation;
+      }
     }
+    if (geometryChanged && !measureFrame) measureFrame = requestAnimationFrame(measureWindows);
   }
 
   function boardContent(): string {
     const issues = filtered();
     if (!allIssues().length) return `<div class="empty-state"><h2>No issues yet</h2><p>${offline() ? 'This saved snapshot contains no issues.' : 'Create the first issue in this project to start the board.'}</p>${offline() ? '' : createButton()}</div>`;
     if (!issues.length) return `<div class="empty-state"><h2>No matching issues</h2><p>Try another search or clear the filters.</p><button class="btn btn--outlined" data-action="clear-filters" type="button">Clear filters</button></div>`;
-    if (layout === 'table') return tableContent(issues);
-    return `<div class="board" aria-label="Issues by status">${groupOrder.filter((group) => (group !== 'other' || issues.some((issue) => groupOf(issue) === group)) && (showClosed || group !== 'closed') && (view === 'all' || view === group)).map((group) => {
+    if (view !== 'all' || layout === 'table') return tableContent(issues);
+    return `<div class="board" aria-label="Issues by status">${groupOrder.filter((group) => (group !== 'other' || issues.some((issue) => groupOf(issue) === group)) && (showClosed || group !== 'closed')).map((group) => {
       const items = issues.filter((issue) => groupOf(issue) === group);
-      return `<section class="column" data-drop-group="${group}" aria-label="${escapeHtml(groupNames[group])}"><h2 class="column__header">${bead(group)}<span>${escapeHtml(groupNames[group])}</span><span class="column__count">${items.length}</span></h2><p class="column__drop-hint" hidden></p><div class="column__list">${items.map(card).join('') || '<p class="column__empty">No issues</p>'}</div></section>`;
+      registerWindow(group, items, 180, false);
+      return `<section class="column" data-drop-group="${group}" aria-label="${escapeHtml(groupNames[group])}"><h2 class="column__header">${bead(group)}<span>${escapeHtml(groupNames[group])}</span><span class="column__count">${items.length}</span></h2><p class="column__drop-hint" hidden></p><div class="column__list" data-window-container="${group}" data-window-content="${group}" tabindex="0" aria-label="${escapeHtml(groupNames[group])} issues">${items.length ? '' : '<p class="column__empty">No issues</p>'}</div></section>`;
     }).join('')}</div>`;
   }
 
   function filters(): string {
     const issueTypes = [...new Set(allIssues().map((issue) => issue.type))].sort();
     const assignees = [...new Set(allIssues().map((issue) => issue.assignee).filter(Boolean))].sort();
-    const activeFilters = Number(!!typeFilter) + Number(!!priorityFilter) + Number(!!assigneeFilter) + Number(!showClosed)
+    const activeFilters = Number(!!typeFilter) + Number(!!priorityFilter) + Number(!!assigneeFilter) + Number(!!epicFilter)
       + Number(!!(scope?.projectNames.length || scope?.hostNames.length));
-    return `<div class="filters${filtersExpanded ? ' filters--expanded' : ''}"><button type="button" class="btn btn--outlined btn--sm filters__toggle" data-action="toggle-filters" aria-expanded="${pressed(filtersExpanded)}" aria-controls="issue-filters">Filters${activeFilters ? ` (${activeFilters})` : ''}${icon('arrow_drop_down')}</button><div id="issue-filters" class="filter-bar${filtersExpanded ? ' filter-bar--expanded' : ''}" aria-label="Filters"><label><span class="visually-hidden">Type</span><select data-change="type" data-focus="type" aria-label="Filter by type"><option value="">All types</option>${issueTypes.map((type) => `<option value="${escapeHtml(type)}"${selected(typeFilter, type)}>${escapeHtml(type)}</option>`).join('')}</select></label><label><span class="visually-hidden">Priority</span><select data-change="priority" data-focus="priority" aria-label="Filter by priority"><option value="">All priorities</option>${[0, 1, 2, 3, 4].map((value) => `<option value="${value}"${selected(priorityFilter, String(value))}>P${value}</option>`).join('')}</select></label><label><span class="visually-hidden">Assignee</span><select data-change="assignee" data-focus="assignee" aria-label="Filter by assignee"><option value="">All assignees</option>${assignees.map((assignee) => `<option value="${escapeHtml(assignee)}"${selected(assigneeFilter, assignee)}>${escapeHtml(assignee)}</option>`).join('')}</select></label><label class="check"><input type="checkbox" data-change="closed"${showClosed ? ' checked' : ''}> Closed</label><button class="btn btn--text btn--sm" type="button" data-action="clear-filters">Clear filters</button><span class="filter-bar__spacer"></span><span class="muted">${snapshot ? `${filtered().length} issues` : 'Issues not loaded'}${taskPool.size ? ` · ${taskPool.size} selected` : ''}</span>${taskPool.size ? '<button class="btn btn--text btn--sm" type="button" data-action="clear-pool">Clear selection</button>' : ''}</div></div>`;
+    const visibleIds = new Set(filtered().map((issue) => issue.id));
+    const hiddenSelection = [...taskPool.values()].filter((item) => item.project !== projectId || !visibleIds.has(item.id)).length;
+    return `<div class="filters${filtersExpanded ? ' filters--expanded' : ''}"><button type="button" class="btn btn--outlined btn--sm filters__toggle" data-action="toggle-filters" aria-expanded="${pressed(filtersExpanded)}" aria-controls="issue-filters">Filters${activeFilters ? ` (${activeFilters})` : ''}${icon('arrow_drop_down')}</button><div id="issue-filters" class="filter-bar${filtersExpanded ? ' filter-bar--expanded' : ''}" aria-label="Filters"><label><span class="visually-hidden">Type</span><select data-change="type" data-focus="type" aria-label="Filter by type"><option value="">All types</option>${issueTypes.map((type) => `<option value="${escapeHtml(type)}"${selected(typeFilter, type)}>${escapeHtml(type)}</option>`).join('')}</select></label><label><span class="visually-hidden">Priority</span><select data-change="priority" data-focus="priority" aria-label="Filter by priority"><option value="">All priorities</option>${[0, 1, 2, 3, 4].map((value) => `<option value="${value}"${selected(priorityFilter, String(value))}>P${value}</option>`).join('')}</select></label><label><span class="visually-hidden">Assignee</span><select data-change="assignee" data-focus="assignee" aria-label="Filter by assignee"><option value="">All assignees</option>${assignees.map((assignee) => `<option value="${escapeHtml(assignee)}"${selected(assigneeFilter, assignee)}>${escapeHtml(assignee)}</option>`).join('')}</select></label>${view === 'all' ? `<label class="check"><input type="checkbox" data-change="closed"${showClosed ? ' checked' : ''}> Include closed</label>` : view === 'closed' ? '<span class="muted">Closed issues are always visible here</span>' : ''}<button class="btn btn--text btn--sm" type="button" data-action="clear-filters">Clear filters</button><span class="filter-bar__spacer"></span><span class="muted">${snapshot ? `${filtered().length} shown` : 'Issues not loaded'}${taskPool.size ? ` · ${taskPool.size} selected${hiddenSelection ? ` · ${hiddenSelection} hidden by filters or project` : ''}` : ''}</span>${taskPool.size ? '<button class="btn btn--text btn--sm" type="button" data-action="clear-pool">Clear selection</button>' : ''}</div></div>`;
   }
 
   function rail(): string {
     const groups: Array<Group | 'all'> = ['all', 'ready', 'active', 'blocked', 'closed', 'deferred'];
     if (view === 'other' || allIssues().some((issue) => groupOf(issue) === 'other')) groups.push('other');
     const project = projects.find((item) => item.id === projectId);
-    return `<nav class="rail" aria-label="Workspace"><div class="rail__workspace"><span class="rail__glyph">${escapeHtml((project ? projectBasename(project) : 'B').slice(0, 2).toLocaleLowerCase())}</span><div>${projectSelect()}</div></div><label class="rail__view"><span class="visually-hidden">Issue view</span><select data-change="view" data-focus="view" aria-label="Issue view">${groups.map((group) => `<option value="${group}"${selected(view, group)}>${group === 'all' ? 'All issues' : escapeHtml(groupNames[group])}</option>`).join('')}</select></label><h2 class="rail__heading">Views</h2>${groups.map((group) => `<button type="button" class="rail__item" data-action="view" data-value="${group}" aria-current="${pressed(view === group)}">${group === 'all' ? icon('view_kanban') : bead(group)}<span>${group === 'all' ? 'All issues' : escapeHtml(groupNames[group])}</span><span class="rail__count">${snapshot ? group === 'all' ? allIssues().length : count(group) : '—'}</span></button>`).join('')}</nav>`;
+    const epicValue = epicFilter ? epicFilter.id === null ? 'none' : `id:${epicFilter.id}` : 'all';
+    const needle = epicSearch.trim().toLocaleLowerCase();
+    const matches = (model?.epics || []).filter((epic) => `${epic.id} ${epic.title}`.toLocaleLowerCase().includes(needle));
+    const shown = matches.slice(0, 50);
+    const selectedEpic = epicFilter?.id ? byId(epicFilter.id) : undefined;
+    const options = selectedEpic && !shown.some((epic) => epic.id === selectedEpic.id) ? [selectedEpic, ...shown] : shown;
+    const epicOptions = `<option value="all"${selected(epicValue, 'all')}>All epics</option><option value="none"${selected(epicValue, 'none')}>No epic</option>${options.map((epic) => `<option value="id:${escapeHtml(epic.id)}"${selected(epicValue, `id:${epic.id}`)}>${escapeHtml(epic.title)} · ${escapeHtml(epic.id)}</option>`).join('')}`;
+    return `<nav class="rail" aria-label="Workspace"><div class="rail__workspace"><span class="rail__glyph">${escapeHtml((project ? projectBasename(project) : 'B').slice(0, 2).toLocaleLowerCase())}</span><div>${projectSelect()}</div></div><div class="rail__create">${createButton()}</div><label class="rail__view"><span class="visually-hidden">Issue view</span><select data-change="view" data-focus="view" aria-label="Issue view">${groups.map((group) => `<option value="${group}"${selected(view, group)}>${group === 'all' ? 'All issues' : escapeHtml(groupNames[group])}</option>`).join('')}</select></label><div class="rail__mobile-epics"><label><span class="visually-hidden">Search epics</span><input type="search" data-input="epic-search" data-focus="epic-search-mobile" placeholder="Search epics" aria-label="Search epics" value="${escapeHtml(epicSearch)}"></label><label><span class="visually-hidden">Epic</span><select data-change="epic" data-focus="epic-mobile" aria-label="Epic">${epicOptions}</select></label></div><h2 class="rail__heading">Views</h2>${groups.map((group) => `<button type="button" class="rail__item" data-action="view" data-value="${group}" aria-current="${pressed(view === group)}">${group === 'all' ? icon('view_kanban') : bead(group)}<span>${group === 'all' ? 'All issues' : escapeHtml(groupNames[group])}</span><span class="rail__count">${snapshot ? count(group) : '—'}</span></button>`).join('')}<div class="rail__epics"><h2 class="rail__heading">Epics</h2><label class="rail__epic-search"><span class="visually-hidden">Search epics</span><input type="search" data-input="epic-search" data-focus="epic-search" placeholder="Search epics" aria-label="Search epics" value="${escapeHtml(epicSearch)}"></label><button class="rail__item rail__item--epic" type="button" data-action="epic" data-value="all" aria-current="${pressed(epicValue === 'all')}">${icon('account_tree')}<span>All epics</span></button><button class="rail__item rail__item--epic" type="button" data-action="epic" data-value="none" aria-current="${pressed(epicValue === 'none')}">${icon('account_tree')}<span>No epic</span></button>${shown.map((epic) => `<button class="rail__item rail__item--epic" type="button" data-action="epic" data-value="id:${escapeHtml(epic.id)}" aria-current="${pressed(epicValue === `id:${epic.id}`)}" title="${escapeHtml(`${epic.title} · ${epic.id}`)}">${icon('account_tree')}<span>${escapeHtml(epic.title)} <small>${escapeHtml(epic.id)}</small></span></button>`).join('')}${matches.length > shown.length ? `<p class="muted rail__epic-empty">${matches.length - shown.length} more; refine the search.</p>` : !shown.length ? '<p class="muted rail__epic-empty">No matching epics.</p>' : ''}</div></nav>`;
   }
 
   function detailActions(issue: Issue): string {
@@ -394,13 +516,19 @@ export function mount(root: HTMLElement, transport: Transport): void {
   function issueDetail(issue: Issue): string {
     const group = groupOf(issue);
     const deps = issue.dependencies;
-    const dependents = allIssues().filter((other) => other.dependencies.some((dep) => dep.id === issue.id));
-    const candidates = allIssues().filter((other) => other.id !== issue.id && !deps.some((dep) => dep.id === other.id));
+    const dependents = [...new Map((model?.references.get(issue.id) || []).map((reference) => [reference.issue.id, reference.issue])).values()];
+    const linked = new Set(deps.map((dependency) => dependency.id));
+    const candidates = allIssues().filter((other) => other.id !== issue.id && !linked.has(other.id));
     if (dependencyId && !candidates.some((candidate) => candidate.id === dependencyId)) dependencyId = '';
+    const needle = dependencySearch.trim().toLocaleLowerCase();
+    const matching = candidates.filter((candidate) => `${candidate.id} ${candidate.title}`.toLocaleLowerCase().includes(needle));
+    const choices = matching.slice(0, 40);
+    const chosen = dependencyId ? byId(dependencyId) : undefined;
+    if (chosen && !choices.some((candidate) => candidate.id === chosen.id)) choices.unshift(chosen);
     return `<div class="detail"><div class="detail__top">${icon(typeIcons[issue.type] ?? 'task_alt')}<span class="mono">${escapeHtml(issue.id)}</span>${priority(issue)}<span class="detail__spacer"></span><button type="button" class="btn btn--icon" data-action="close-detail" aria-label="Close issue details">${icon('close')}</button></div>
       <h2 class="detail__title">${escapeHtml(issue.title)}</h2><div class="detail__actions">${detailActions(issue)}</div>
       ${editSection(issue)}
-      <dl class="meta-list"><dt>Status</dt><dd>${bead(group)} ${escapeHtml(groupNames[group])}</dd><dt>Type</dt><dd>${escapeHtml(issue.type)}</dd><dt>Assignee</dt><dd>${escapeHtml(issue.assignee || 'Unassigned')}</dd><dt>Updated</dt><dd>${escapeHtml(relativeTime(issue.updatedAt) || 'Unknown')}</dd>${issue.labels.length ? `<dt>Labels</dt><dd>${issue.labels.map((label) => `<span class="chip chip--label">${escapeHtml(label)}</span>`).join(' ')}</dd>` : ''}</dl>
+      <dl class="meta-list"><dt>Status</dt><dd>${escapeHtml(issue.status || 'Unknown')}</dd><dt>View group</dt><dd>${bead(group)} ${escapeHtml(groupNames[group])}${blockedIds.has(issue.id) && issue.status !== 'blocked' ? ' · Blocked by dependencies' : ''}</dd><dt>Type</dt><dd>${escapeHtml(issue.type)}</dd><dt>Assignee</dt><dd>${escapeHtml(issue.assignee || 'Unassigned')}</dd><dt>Updated</dt><dd>${escapeHtml(relativeTime(issue.updatedAt) || 'Unknown')}</dd>${issue.labels.length ? `<dt>Labels</dt><dd>${issue.labels.map((label) => `<span class="chip chip--label">${escapeHtml(label)}</span>`).join(' ')}</dd>` : ''}</dl>
       ${detailLoading ? '<p class="muted" role="status">Loading issue details…</p>' : ''}${detailError ? `<p class="detail__error" role="alert">${escapeHtml(detailError)} <button class="btn btn--text btn--sm" type="button" data-action="retry-detail">Retry</button></p>` : ''}
       ${issue.description ? `<section class="detail__section"><h3>Description</h3><p class="detail__prose">${escapeHtml(issue.description)}</p></section>` : ''}
       ${issue.acceptance ? `<section class="detail__section"><h3>Acceptance criteria</h3><p class="detail__prose">${escapeHtml(issue.acceptance)}</p></section>` : ''}
@@ -409,7 +537,7 @@ export function mount(root: HTMLElement, transport: Transport): void {
       ${product.documents(issue)}
       <section class="detail__section"><h3>Dependencies</h3>${deps.length ? `<ul class="thread">${deps.map((dep) => `<li><span class="thread__node">${bead(byId(dep.id) ? groupOf(byId(dep.id) as Issue) : 'other')}</span><span><button type="button" class="text-link" data-action="select" data-id="${escapeHtml(dep.id)}"${byId(dep.id) ? '' : ' disabled'}>${escapeHtml(byId(dep.id)?.title || dep.id)}</button><span class="thread__meta mono">${escapeHtml(dep.id)} · ${escapeHtml(dep.type)}</span></span><button type="button" class="btn btn--icon" data-action="unlink" data-id="${escapeHtml(issue.id)}" data-depends="${escapeHtml(dep.id)}" aria-label="Remove dependency ${escapeHtml(dep.id)}" title="${escapeHtml(actionCommand('unlink', issue.id, dep.id))}"${disabled()}>${icon('close')}</button></li>`).join('')}</ul>` : '<p class="muted">No dependencies.</p>'}
       ${dependents.length ? `<p class="muted">Referenced by</p><ul class="thread">${dependents.map((other) => `<li><span class="thread__node">${bead(groupOf(other))}</span><button type="button" class="text-link" data-action="select" data-id="${escapeHtml(other.id)}">${escapeHtml(other.title)} <span class="mono">${escapeHtml(other.id)}</span></button></li>`).join('')}</ul>` : ''}
-      ${candidates.length ? `<form class="dependency-form" data-form="link"><label>Link issue<select name="dependsOn" data-input="dependency" aria-label="Dependency issue"${disabled()}><option value="">Choose an issue</option>${candidates.map((candidate) => `<option value="${escapeHtml(candidate.id)}"${selected(dependencyId, candidate.id)}>${escapeHtml(candidate.id)} · ${escapeHtml(candidate.title)}</option>`).join('')}</select></label><label>Relationship<select name="type" data-input="dependency-type" aria-label="Dependency relationship"${disabled()}>${['blocks', 'parent-child', 'related', 'discovered-from'].map((type) => `<option value="${type}"${selected(dependencyType, type)}>${type}</option>`).join('')}</select></label><button class="btn btn--outlined" type="submit" data-link-submit${pending || !dependencyId ? ' disabled' : ''}>${icon('add_link')}Link</button><code class="command dependency-form__command" data-command="link">${escapeHtml(actionCommand('link', issue.id, dependencyId || 'ISSUE', dependencyType))}</code></form>` : ''}</section>
+      ${candidates.length ? `<form class="dependency-form" data-form="link"><label>Search issues<input type="search" data-input="dependency-search" data-focus="dependency-search" placeholder="Title or ID" value="${escapeHtml(dependencySearch)}"${disabled()}></label><label>Link issue<select name="dependsOn" data-input="dependency" aria-label="Dependency issue"${disabled()}><option value="">Choose an issue</option>${choices.map((candidate) => `<option value="${escapeHtml(candidate.id)}"${selected(dependencyId, candidate.id)}>${escapeHtml(candidate.id)} · ${escapeHtml(candidate.title)}</option>`).join('')}</select></label>${matching.length > 40 ? `<span class="muted">${matching.length - 40} more; refine the search.</span>` : ''}<label>Relationship<select name="type" data-input="dependency-type" aria-label="Dependency relationship"${disabled()}>${['blocks', 'parent-child', 'related', 'discovered-from'].map((type) => `<option value="${type}"${selected(dependencyType, type)}>${type}</option>`).join('')}</select></label><button class="btn btn--outlined" type="submit" data-link-submit${pending || !dependencyId ? ' disabled' : ''}>${icon('add_link')}Link</button><code class="command dependency-form__command" data-command="link">${escapeHtml(actionCommand('link', issue.id, dependencyId || 'ISSUE', dependencyType))}</code></form>` : ''}</section>
       ${commentsSection(issue)}
       <div class="command"><span>$ </span>${escapeHtml(actionCommand(group === 'ready' ? 'claim' : group === 'closed' ? 'reopen' : 'close', issue.id))}</div></div>`;
   }
@@ -419,16 +547,23 @@ export function mount(root: HTMLElement, transport: Transport): void {
     return `<dialog class="dialog" aria-labelledby="create-heading"><form data-form="create"><header class="dialog__header"><h2 id="create-heading">New issue</h2><button type="button" class="btn btn--icon" data-action="cancel-create" aria-label="Close">${icon('close')}</button></header><div class="dialog__body"><label class="field">Title<input name="title" data-input="draft" data-focus="create-title" value="${escapeHtml(draft.title)}" placeholder="What needs to be done?" required maxlength="300"${disabled()}></label><div class="dialog__row"><label class="field">Type<select name="type" data-input="draft"${disabled()}>${types.map((type) => `<option value="${type}"${selected(draft.type, type)}>${type}</option>`).join('')}</select></label><label class="field">Priority<select name="priority" data-input="draft"${disabled()}>${[0, 1, 2, 3, 4].map((value) => `<option value="${value}"${selected(draft.priority, String(value))}>P${value}</option>`).join('')}</select></label></div><label class="field">Description<textarea name="description" data-input="draft" rows="4" placeholder="Context, links, what done looks like"${disabled()}>${escapeHtml(draft.description)}</textarea></label><label class="field">Assignee<input name="assignee" data-input="draft" value="${escapeHtml(draft.assignee)}" autocomplete="off"${disabled()}></label><label class="field">Labels, comma separated<input name="labels" data-input="draft" value="${escapeHtml(draft.labels)}" autocomplete="off"${disabled()}></label><div class="command" aria-label="Equivalent command"><span>$ </span><span data-command="create">${escapeHtml(createCommand(draft))}</span></div>${actionError ? `<p class="detail__error" role="alert">${escapeHtml(actionError)}</p>` : ''}</div><footer class="dialog__actions"><button type="button" class="btn btn--text" data-action="cancel-create"${disabled()}>Cancel</button><button type="submit" class="btn btn--primary"${disabled()}>${pending ? 'Creating…' : 'Create issue'}</button></footer></form></dialog>`;
   }
 
-  function boardShell(): string {
-    const issue = currentIssue();
+  function appBar(): string {
     const project = projects.find((item) => item.id === projectId);
     const sync = project ? `${projectAvailability(project)}${snapshot ? ` · ${relativeTime(snapshot.fetchedAt) || snapshot.fetchedAt}` : ''}` : 'Refresh';
-    return `<div class="app${issue ? ' app--drawer-open' : ''}">
-      <header class="app-bar"><div class="brand"><span class="brand__mark">${bead('closed')}${bead('active')}${bead('ready')}</span><span>beads</span></div><div class="app-bar__search">${searchField()}</div><div class="app-bar__actions"><button type="button" class="btn btn--text btn--sm" data-action="refresh" aria-label="${projectId ? 'Refresh issues' : 'Refresh projects'}" title="${escapeHtml(sync)}"${pending || loadingSnapshot || loadingProjects ? ' disabled' : ''}>${icon('sync')}<span>${escapeHtml(sync)}</span></button>${createButton()}</div></header>
-      ${rail()}<main class="main"><div class="main__head"><div class="main__title-row"><h1 tabindex="-1" data-focus="board-heading">${layout === 'board' ? 'Board' : 'Table'}</h1>${snapshot ? `<span class="muted">${count('ready')} ready · ${count('active')} in progress · ${count('blocked')} blocked${offline() ? ' · stale' : ''}</span>` : ''}
-      <div class="segmented" aria-label="Layout"><button type="button" data-action="layout" data-value="board" aria-pressed="${pressed(layout === 'board')}">${icon('view_kanban')}Board</button><button type="button" data-action="layout" data-value="table" aria-pressed="${pressed(layout === 'table')}">${icon('table_rows')}Table</button></div>
-      <button type="button" class="btn btn--icon" data-action="spotlight" aria-label="Highlight dependencies" aria-pressed="${pressed(spotlightOn)}" title="Highlight dependencies on hover or focus">${icon('account_tree')}</button></div><div class="main__tools">${filters()}<div class="product-controls">${product.controls()}</div></div>${scope ? '<p class="muted">Saved filter scope limits project choices. Clear filters to see all projects.</p>' : ''}</div>${errorBanner()}${bodyState() || boardContent()}</main>
-      ${issue ? `<aside class="drawer" aria-label="Issue details">${issueDetail(issue)}</aside>` : ''}</div>${createDialog()}${product.dialog()}`;
+    return `<header class="app-bar"><div class="brand"><span class="brand__mark">${bead('closed')}${bead('active')}${bead('ready')}</span><span>beads</span></div><div class="app-bar__search">${searchField()}</div><div class="app-bar__actions"><button type="button" class="btn btn--text btn--sm" data-action="refresh" aria-label="${projectId ? 'Refresh issues' : 'Refresh projects'}" title="${escapeHtml(sync)}"${pending || loadingSnapshot || loadingProjects ? ' disabled' : ''}>${icon('sync')}<span>${escapeHtml(sync)}</span></button></div></header>`;
+  }
+  function mainHead(): string {
+    const groups: Array<Group | 'all'> = ['all', 'ready', 'active', 'blocked'];
+    if (!groups.includes(view)) groups.push(view);
+    const effectiveLayout = view === 'all' ? layout : 'table';
+    const epicLabel = !epicFilter ? 'All epics' : epicFilter.id === null ? 'No epic' : model?.byId.get(epicFilter.id)?.title || epicFilter.id;
+    const scopeParts = [epicLabel, typeFilter, priorityFilter ? `P${priorityFilter}` : '', assigneeFilter, query.trim() ? `search: “${query.trim()}”` : ''].filter(Boolean);
+    const visibleIds = new Set(filtered().map((issue) => issue.id));
+    const hiddenSelection = [...taskPool.values()].filter((item) => item.project !== projectId || !visibleIds.has(item.id)).length;
+    return `<div class="main__head"><div class="main__title-row"><h1 class="visually-hidden" tabindex="-1" data-focus="board-heading">${view === 'all' ? 'All issues' : escapeHtml(groupNames[view])}</h1><div class="summary" role="group" aria-label="Issue views">${groups.map((group) => {
+      const label = group === 'all' ? 'All issues' : groupNames[group];
+      return `<button type="button" class="view-button" data-action="view" data-value="${group}" data-focus="header-view-${group}" aria-pressed="${pressed(view === group)}" aria-label="${escapeHtml(label)}, ${count(group)} issues matching filters"><span>${escapeHtml(label)}</span><span class="view-button__count" aria-hidden="true">${snapshot ? count(group) : '—'}</span></button>`;
+    }).join('')}</div><div class="segmented" role="group" aria-label="Issue layout"><button type="button" data-action="layout" data-value="board" aria-pressed="${pressed(effectiveLayout === 'board')}"${view !== 'all' ? ' disabled title="Board is available in All issues; status views use Table"' : ' title="Board layout"'}>${icon('view_kanban')}Board</button><button type="button" data-action="layout" data-value="table" aria-pressed="${pressed(effectiveLayout === 'table')}" title="Table layout">${icon('table_rows')}Table</button></div></div><p class="scope-note"><strong>Scope:</strong> ${escapeHtml(scopeParts.join(' · '))}${view === 'all' ? ` · closed ${showClosed ? 'included' : 'hidden'}` : ''}${snapshot ? ` · ${filtered().length} shown` : ''}${taskPool.size ? ` · ${taskPool.size} selected${hiddenSelection ? ` · ${hiddenSelection} hidden by filters or project` : ''}` : ''}${offline() && snapshot ? ' · stale' : ''}</p><div class="main__tools">${filters()}<div class="product-controls">${product.controls()}<button type="button" class="btn btn--icon" data-action="spotlight" aria-label="Highlight dependencies" aria-pressed="${pressed(spotlightOn)}" title="Highlight dependencies on hover or focus">${icon('account_tree')}</button></div></div>${scope ? '<p class="muted">Saved filter scope limits project choices. Clear filters to see all projects.</p>' : ''}</div>`;
   }
 
   function bodyState(): string {
@@ -440,13 +575,23 @@ export function mount(root: HTMLElement, transport: Transport): void {
   }
 
 
+  const islandMarkup = new Map<string, string>();
+  let contentKey = '';
+  let initialized = false;
+  let renderedDetailId = '';
+  function patchIsland(name: string, html: string): void {
+    if (islandMarkup.get(name) === html) return;
+    const slot = root.querySelector<HTMLElement>(`[data-island="${name}"]`);
+    if (slot) { slot.innerHTML = html; islandMarkup.set(name, html); }
+  }
+
   function render(): void {
     if (disposed) return;
     rendering = true;
-    filteredCache = null;
     const active = document.activeElement instanceof HTMLElement && root.contains(document.activeElement) ? document.activeElement : null;
     const hadProductDialog = !!root.querySelector('[data-product-dialog]');
-    const hadCreateDialog = !!root.querySelector('dialog:not([data-product-dialog])');
+    const hadCreateDialog = !!root.querySelector('[data-island="create"] dialog');
+    const hadDrawer = !!root.querySelector('.drawer:not([hidden])');
     const candidates = (container: HTMLElement): HTMLElement[] => Array.from(container.querySelectorAll<HTMLElement>('[data-focus], [data-input], [data-action], [data-change], [data-product-action], [data-product-input], [data-product-change]'));
     const matches = (element: HTMLElement): boolean => !!active && element.tagName === active.tagName
       && element.dataset.focus === active.dataset.focus && element.dataset.input === active.dataset.input
@@ -460,38 +605,84 @@ export function mount(root: HTMLElement, transport: Transport): void {
     const focusIndex = active ? candidates(root).filter(matches).indexOf(active) : -1;
     const start = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement ? active.selectionStart : null;
     const end = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement ? active.selectionEnd : null;
-    const scrollSelector = '.board, .column__list, .table-wrap, .drawer, .dialog__body, .project-picker__list';
-    const scrollPositions = Array.from(root.querySelectorAll<HTMLElement>(scrollSelector), (element) => [element.scrollTop, element.scrollLeft] as const);
     const openDetails = new Set(Array.from(root.querySelectorAll<HTMLDetailsElement>('details[data-persist][open]'), (element) => element.dataset.persist));
-    hoverId = '';
-    root.innerHTML = boardShell();
+    const scrolls = new Map(Array.from(root.querySelectorAll<HTMLElement>('[data-window-container]'), (element) => [element.dataset.windowContainer!, [element.scrollTop, element.scrollLeft] as const]));
+    const boardLeft = root.querySelector<HTMLElement>('.board')?.scrollLeft || 0;
+    const drawerTop = root.querySelector<HTMLElement>('.drawer')?.scrollTop || 0;
+    const dialogTop = root.querySelector<HTMLElement>('.dialog__body')?.scrollTop || 0;
+    const pickerTop = root.querySelector<HTMLElement>('.project-picker__list')?.scrollTop || 0;
+    if (!initialized) {
+      root.innerHTML = '<div class="app"><div class="island-contents" data-island="bar"></div><div class="island-contents" data-island="rail"></div><main class="main"><div class="island-contents" data-island="head"></div><div class="island-contents" data-island="banners"></div><div class="content-island" data-island="content"></div></main><aside class="drawer" data-island="drawer" aria-label="Issue details" hidden></aside></div><div class="island-contents" data-island="create"></div><div class="island-contents" data-island="product"></div>';
+      initialized = true;
+    }
+    patchIsland('bar', appBar());
+    patchIsland('rail', rail());
+    patchIsland('head', mainHead());
+    patchIsland('banners', errorBanner());
+    const state = bodyState();
+    const nextContentKey = state || JSON.stringify([projectId, filterCacheKey, layout, sortKey, sortDirection, allIssues().length ? '' : [offline(), pending]]);
+    if (nextContentKey !== contentKey) {
+      contentKey = nextContentKey;
+      windows.clear();
+      root.querySelector<HTMLElement>('[data-island="content"]')!.innerHTML = state || boardContent();
+      for (const key of windows.keys()) syncWindow(key);
+      for (const element of root.querySelectorAll<HTMLElement>('[data-window-container]')) {
+        const position = scrolls.get(element.dataset.windowContainer || '');
+        if (position) { element.scrollTop = position[0]; element.scrollLeft = position[1]; }
+      }
+      const board = root.querySelector<HTMLElement>('.board');
+      if (board) board.scrollLeft = boardLeft;
+      for (const key of windows.keys()) syncWindow(key);
+    }
+    const issue = currentIssue();
+    patchIsland('drawer', issue ? issueDetail(issue) : '');
+    const drawer = root.querySelector<HTMLElement>('.drawer')!;
+    drawer.hidden = !issue;
+    drawer.scrollTop = issue?.id === renderedDetailId ? drawerTop : 0;
+    drawer.setAttribute('role', 'dialog');
+    const mobileDrawer = !!issue && window.matchMedia('(max-width: 767px)').matches;
+    if (mobileDrawer) drawer.setAttribute('aria-modal', 'true'); else drawer.removeAttribute('aria-modal');
+    for (const background of root.querySelectorAll<HTMLElement>('.app-bar, .rail, .main')) background.inert = mobileDrawer;
+    root.querySelector('.app')?.classList.toggle('app--drawer-open', !!issue);
+    patchIsland('create', createDialog());
+    patchIsland('product', product.dialog());
     for (const element of root.querySelectorAll<HTMLDetailsElement>('details[data-persist]')) element.open = openDetails.has(element.dataset.persist);
+    const dialogBody = root.querySelector<HTMLElement>('.dialog__body');
+    if (dialogBody) dialogBody.scrollTop = dialogTop;
+    const pickerList = root.querySelector<HTMLElement>('.project-picker__list');
+    if (pickerList) pickerList.scrollTop = pickerTop;
     if (projectPickerOpen) setProjectPicker(true);
-    if (offline()) {
-      const selectors = ['[data-action=\"new\"]', '[data-action=\"edit\"]', '[data-action=\"claim\"]', '[data-action=\"reclaim\"]', '[data-action=\"close\"]', '[data-action=\"reopen\"]', '[data-action=\"unlink\"]', '[data-action=\"undo-close\"]', '[data-form=\"create\"] input', '[data-form=\"create\"] select', '[data-form=\"create\"] textarea', '[data-form=\"create\"] button[type=\"submit\"]', '[data-form=\"update\"] input', '[data-form=\"update\"] select', '[data-form=\"update\"] textarea', '[data-form=\"update\"] button[type=\"submit\"]', '[data-form=\"comment\"] textarea', '[data-form=\"comment\"] button[type=\"submit\"]', '[data-form=\"link\"] select', '[data-form=\"link\"] button[type=\"submit\"]'];
-      for (const element of root.querySelectorAll<HTMLButtonElement | HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(selectors.join(', '))) element.disabled = true;
-      for (const element of root.querySelectorAll<HTMLButtonElement>('[data-action=\"retry-comments\"], [data-product-action=\"documents-retry\"]')) element.disabled = true;
+    const offlineSelectors = ['[data-action="new"]', '[data-action="edit"]', '[data-action="claim"]', '[data-action="reclaim"]', '[data-action="close"]', '[data-action="reopen"]', '[data-action="unlink"]', '[data-action="undo-close"]', '[data-form="create"] input', '[data-form="create"] select', '[data-form="create"] textarea', '[data-form="create"] button[type="submit"]', '[data-form="update"] input', '[data-form="update"] select', '[data-form="update"] textarea', '[data-form="update"] button[type="submit"]', '[data-form="comment"] textarea', '[data-form="comment"] button[type="submit"]', '[data-form="link"] input', '[data-form="link"] select', '[data-form="link"] button[type="submit"]', '[data-action="retry-comments"]', '[data-product-action="documents-retry"]'];
+    for (const element of root.querySelectorAll<HTMLButtonElement | HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(offlineSelectors.join(', '))) {
+      if (offline()) { if (!element.disabled) element.dataset.offlineDisabled = 'true'; element.disabled = true; }
+      else if (element.dataset.offlineDisabled) { element.disabled = false; delete element.dataset.offlineDisabled; }
+    }
+    for (const row of root.querySelectorAll<HTMLElement>('.issue-card, .issue-table__row')) {
+      const id = row.dataset.id || '';
+      row.classList.toggle('issue-card--selected', row.classList.contains('issue-card') && id === selectedId);
+      if (row.classList.contains('issue-table__row')) row.dataset.selected = pressed(id === selectedId);
+      if (row.classList.contains('issue-card')) row.draggable = !pending && !offline();
+      const checkbox = row.querySelector<HTMLInputElement>('[data-change="pool"]');
+      if (checkbox) checkbox.checked = taskPool.has(`${projectId}\0${id}`);
     }
     const dialog = root.querySelector<HTMLDialogElement>('dialog');
     if (dialog) {
-      dialog.addEventListener('cancel', (event) => { event.preventDefault(); if (dialog.hasAttribute('data-product-dialog')) product.close(); else if (!pending) { createOpen = false; render(); } });
-      if (!document.querySelector('.product-confirm[open]')) dialog.showModal();
+      if (!dialog.dataset.cancelBound) {
+        dialog.dataset.cancelBound = 'true';
+        dialog.addEventListener('cancel', (event) => { event.preventDefault(); if (dialog.hasAttribute('data-product-dialog')) product.close(); else if (!pending) { createOpen = false; render(); } });
+      }
+      if (!dialog.open && !document.querySelector('.product-confirm[open]')) dialog.showModal();
     }
-    Array.from(root.querySelectorAll<HTMLElement>(scrollSelector)).forEach((element, index) => {
-      const position = scrollPositions[index];
-      if (position) { element.scrollTop = position[0]; element.scrollLeft = position[1]; }
-    });
-    if (focusIndex >= 0) {
+    if (focusIndex >= 0 && active && !active.isConnected) {
       const next = candidates(root).filter(matches)[focusIndex];
       next?.focus({ preventScroll: true });
       if ((next instanceof HTMLInputElement || next instanceof HTMLTextAreaElement) && start !== null && end !== null) {
-        try { next.setSelectionRange(start, end); } catch { /* Search fields and selects vary by browser. */ }
+        try { next.setSelectionRange(start, end); } catch { /* Selection is not supported by every input type. */ }
       }
-      if ((active?.dataset.action === 'retry' || active?.dataset.action === 'refresh')
-        && (!next || (next instanceof HTMLButtonElement && next.disabled))) {
-        root.querySelector<HTMLElement>('[data-focus="board-heading"]')?.focus({ preventScroll: true });
-      }
+      if ((active.dataset.action === 'retry' || active.dataset.action === 'refresh') && (!next || (next instanceof HTMLButtonElement && next.disabled))) root.querySelector<HTMLElement>('[data-focus="board-heading"]')?.focus({ preventScroll: true });
     }
+    if (issue && issue.id !== renderedDetailId && !dialog) drawer.querySelector<HTMLElement>('[data-action="close-detail"]')?.focus({ preventScroll: true });
+    renderedDetailId = issue?.id || '';
     if (hadProductDialog && !root.querySelector('[data-product-dialog]')) {
       const handoff = productReturn === 'handoff' ? root.querySelector<HTMLButtonElement>('[data-product-action="handoff"]:not(:disabled)') : null;
       (handoff || root.querySelector<HTMLElement>('[data-focus="workflows"]'))?.focus({ preventScroll: true });
@@ -499,6 +690,7 @@ export function mount(root: HTMLElement, transport: Transport): void {
       (root.querySelector<HTMLButtonElement>('[data-action="new"]:not(:disabled)') || root.querySelector<HTMLElement>('[data-focus="board-heading"]'))?.focus({ preventScroll: true });
     }
     rendering = false;
+    if (hadDrawer !== !!issue) scheduleWindows();
     if (hoverId || focusId || selectedId) applySpotlight();
   }
 
@@ -515,7 +707,8 @@ export function mount(root: HTMLElement, transport: Transport): void {
         if (!projects.some((project) => project.id === projectId)) {
           const current = projects.filter((project) => project.current);
           projectId = (!projectId && current.length === 1 ? current[0]?.id : undefined) || projects[0]?.id || '';
-          snapshot = null; issueIndex.clear(); readyIds.clear(); blockedIds.clear();
+          snapshot = null; issueIndex.clear(); blockedIds.clear();
+          model = null; modelSignature = ''; modelVersion++; epicFilter = undefined; epicSearch = '';
           selectedId = ''; detail = null; detailSequence++; commentsSequence++;
           comments = []; commentsError = ''; undoClose = null;
         }
@@ -551,9 +744,15 @@ export function mount(root: HTMLElement, transport: Transport): void {
         const result = await transport.request<Snapshot>({ method: 'snapshot', project: requestedProject });
         if (disposed || projectId !== requestedProject) return;
         if (result.project.id !== requestedProject) throw new Error('Beads returned data for a different project.');
+        const signature = JSON.stringify([result.project.id, result.issues, result.readyIds, result.blockedIds]);
+        if (!model || signature !== modelSignature) {
+          model = createIssueModel(result);
+          modelSignature = signature;
+          modelVersion++;
+          issueIndex = model.byId;
+          blockedIds = new Set(result.blockedIds);
+        }
         snapshot = result;
-        issueIndex = new Map(result.issues.map((issue) => [issue.id, issue]));
-        readyIds = new Set(result.readyIds); blockedIds = new Set(result.blockedIds);
         connectionLost = false;
         projects = projects.map((project) => project.id === result.project.id ? { ...project, ...result.project } : project);
         snapshotGeneration++;
@@ -622,6 +821,7 @@ export function mount(root: HTMLElement, transport: Transport): void {
     detailLoading = true;
     dependencyId = '';
     dependencyType = 'blocks';
+    dependencySearch = '';
     if (offline()) {
       detail = byId(id) || null; detailLoading = false; commentsSequence++;
       comments = []; commentsLoading = false; commentsError = 'Comments are unavailable offline.';
@@ -711,14 +911,49 @@ export function mount(root: HTMLElement, transport: Transport): void {
   }
 
   function clearFilters(): void {
-    query = ''; typeFilter = ''; priorityFilter = ''; assigneeFilter = ''; showClosed = true; view = 'all'; scope = null;
+    query = ''; typeFilter = ''; priorityFilter = ''; assigneeFilter = ''; epicFilter = undefined; epicSearch = ''; showClosed = false; scope = null;
     render();
   }
-  function selectProject(id: string, clearQuery: boolean): void {
+  function setEpic(value: string): void {
+    if (value === 'all') epicFilter = undefined;
+    else {
+      const project = projects.find((item) => item.id === projectId);
+      const hostName = project ? portableHostName(project) : '';
+      const id = value === 'none' ? null : value.startsWith('id:') ? value.slice(3) : '';
+      if (!project || !hostName || (id !== null && model?.byId.get(id)?.type !== 'epic')) {
+        actionError = 'Choose an epic in a registered project with a portable host name.';
+        render(); return;
+      }
+      epicFilter = { id, projectName: project.name, hostName };
+    }
+    actionError = '';
+    render();
+  }
+  function closeDetail(): void {
+    const id = selectedId;
+    selectedId = ''; detail = null; detailSequence++; commentsSequence++;
+    render();
+    let origin = detailOrigin?.isConnected ? detailOrigin : null;
+    if (!origin) {
+      for (const [key, state] of windows) {
+        const index = state.items.findIndex((item) => item.id === id);
+        const container = root.querySelector<HTMLElement>(`[data-window-container="${key}"]`);
+        if (index < 0 || !container) continue;
+        container.scrollTop = state.offsets[index]!;
+        syncWindow(key);
+        origin = Array.from(container.querySelectorAll<HTMLElement>('[data-action="select"]')).find((item) => item.dataset.id === id && item instanceof HTMLButtonElement) || null;
+        break;
+      }
+    }
+    (origin || root.querySelector<HTMLElement>('[data-focus="search"]'))?.focus({ preventScroll: true });
+    detailOrigin = null;
+  }
+  function selectProject(id: string, clearQuery: boolean, preserveEpic = false): void {
     const project = projects.find((item) => item.id === id);
     if (!project || id === projectId) return;
     if (!inScope(project, scope)) { actionError = 'This project is outside the saved filter scope. Clear filters to view it.'; render(); return; }
-    projectId = id; snapshot = null; issueIndex.clear(); readyIds.clear(); blockedIds.clear();
+    projectId = id; snapshot = null; issueIndex.clear(); blockedIds.clear();
+    model = null; modelSignature = ''; modelVersion++; epicSearch = ''; if (!preserveEpic) epicFilter = undefined;
     loadingSnapshot = true; connectionLost = false; selectedId = ''; detail = null; detailSequence++; commentsSequence++;
     comments = []; commentsError = ''; commentsLoading = false; undoClose = null;
     loadError = ''; actionError = ''; if (clearQuery && !scope) query = ''; render(); void refresh();
@@ -754,6 +989,16 @@ export function mount(root: HTMLElement, transport: Transport): void {
 
   function onResize(): void {
     if (projectPickerOpen) setProjectPicker(true);
+    const mobileDrawer = !!currentIssue() && window.matchMedia('(max-width: 767px)').matches;
+    for (const background of root.querySelectorAll<HTMLElement>('.app-bar, .rail, .main')) background.inert = mobileDrawer;
+    const drawer = root.querySelector<HTMLElement>('.drawer');
+    if (mobileDrawer) drawer?.setAttribute('aria-modal', 'true'); else drawer?.removeAttribute('aria-modal');
+    for (const state of windows.values()) {
+      state.heights.fill(state.estimate);
+      state.offsets[0] = 0;
+      for (let index = 0; index < state.heights.length; index++) state.offsets[index + 1] = state.offsets[index]! + state.heights[index]!;
+    }
+    scheduleWindows();
   }
 
 
@@ -810,11 +1055,17 @@ export function mount(root: HTMLElement, transport: Transport): void {
       case 'toggle-filters': filtersExpanded = !filtersExpanded; render(); break;
       case 'clear-filters': clearFilters(); break;
       case 'clear-pool': taskPool.clear(); render(); break;
-      case 'layout': if (target.dataset.value === 'board' || target.dataset.value === 'table') { layout = target.dataset.value; render(); } break;
+      case 'layout': if (view === 'all' && (target.dataset.value === 'board' || target.dataset.value === 'table')) { layout = target.dataset.value; render(); } break;
       case 'spotlight': spotlightOn = !spotlightOn; render(); break;
-      case 'view': view = (target.dataset.value || 'all') as Group | 'all'; if (view === 'closed') showClosed = true; render(); break;
-      case 'select': if (id && byId(id)) void loadDetail(id); break;
-      case 'close-detail': selectedId = ''; detail = null; detailSequence++; render(); break;
+      case 'view': view = (target.dataset.value || 'all') as Group | 'all'; render(); break;
+      case 'epic': setEpic(target.dataset.value || 'all'); break;
+      case 'select':
+        if (id && byId(id)) {
+          if (!selectedId) detailOrigin = target.closest<HTMLElement>('.issue-card, .issue-table__row')?.querySelector<HTMLElement>('button[data-action="select"]') || target;
+          void loadDetail(id);
+        }
+        break;
+      case 'close-detail': closeDetail(); break;
       case 'claim': case 'close': case 'reopen': case 'reclaim': if (id) void mutate(action, { id }); break;
       case 'unlink': if (id && target.dataset.depends) void mutate('unlink', { id, dependsOn: target.dataset.depends }); break;
     }
@@ -834,7 +1085,8 @@ export function mount(root: HTMLElement, transport: Transport): void {
         render();
       }
     } else if (change === 'type') { typeFilter = target.value; render(); }
-    else if (change === 'view' && ['all', ...groupOrder].includes(target.value)) { view = target.value as Group | 'all'; if (view === 'closed') showClosed = true; render(); }
+    else if (change === 'view' && ['all', ...groupOrder].includes(target.value)) { view = target.value as Group | 'all'; render(); }
+    else if (change === 'epic') setEpic(target.value);
     else if (change === 'priority') { priorityFilter = target.value; render(); }
     else if (change === 'assignee') { assigneeFilter = target.value; render(); }
     else if (change === 'closed' && target instanceof HTMLInputElement) { showClosed = target.checked; render(); }
@@ -849,6 +1101,10 @@ export function mount(root: HTMLElement, transport: Transport): void {
       if (query === target.value) return;
       query = target.value;
       render();
+    } else if (target.dataset.input === 'epic-search') {
+      if (epicSearch !== target.value) { epicSearch = target.value; render(); }
+    } else if (target.dataset.input === 'dependency-search') {
+      if (dependencySearch !== target.value) { dependencySearch = target.value; render(); }
     } else if (target.dataset.input === 'draft' && target.name in draft) {
       draft[target.name as keyof Draft] = target.value;
       const command = root.querySelector<HTMLElement>('[data-command="create"]');
@@ -946,15 +1202,42 @@ export function mount(root: HTMLElement, transport: Transport): void {
     }
     if (event.key === 'Escape') {
       if (createOpen && !pending) { createOpen = false; render(); event.preventDefault(); }
+      else if (selectedId) { closeDetail(); event.preventDefault(); }
       else if (query) { query = ''; render(); event.preventDefault(); }
-      else if (selectedId) { selectedId = ''; detail = null; detailSequence++; render(); event.preventDefault(); }
       return;
+    }
+    if (event.key === 'Tab' && target instanceof HTMLElement) {
+      const drawer = target.closest<HTMLElement>('.drawer[aria-modal="true"]');
+      if (drawer) {
+        const controls = Array.from(drawer.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex]:not([tabindex="-1"])')).filter((item) => !item.hidden && item.getClientRects().length > 0);
+        if (controls.length && ((event.shiftKey && target === controls[0]) || (!event.shiftKey && target === controls[controls.length - 1]))) {
+          (event.shiftKey ? controls[controls.length - 1] : controls[0])?.focus(); event.preventDefault(); return;
+        }
+      }
+      const row = target.closest<HTMLElement>('[data-virtual-index]');
+      const container = row?.closest<HTMLElement>('[data-window-container]');
+      const key = container?.dataset.windowContainer;
+      const state = key ? windows.get(key) : undefined;
+      if (row && container && key && state) {
+        const controls = Array.from(row.querySelectorAll<HTMLElement>('input:not(:disabled), button:not(:disabled)'));
+        const edge = event.shiftKey ? controls[0] : controls[controls.length - 1];
+        const nextIndex = Number(row.dataset.virtualIndex) + (event.shiftKey ? -1 : 1);
+        if (target === edge && nextIndex >= 0 && nextIndex < state.items.length
+          && !container.querySelector(`[data-virtual-index="${nextIndex}"]`)) {
+          container.scrollTop = state.offsets[nextIndex]!;
+          syncWindow(key);
+          const nextRow = container.querySelector<HTMLElement>(`[data-virtual-index="${nextIndex}"]`);
+          const nextControls = nextRow ? Array.from(nextRow.querySelectorAll<HTMLElement>('input:not(:disabled), button:not(:disabled)')) : [];
+          (event.shiftKey ? nextControls[nextControls.length - 1] : nextControls[0])?.focus();
+          scheduleWindows(); event.preventDefault(); return;
+        }
+      }
     }
     if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || (target instanceof HTMLElement && target.isContentEditable) || createOpen) return;
     if (target instanceof Element && target.closest('[data-form="update"], [data-form="comment"], [data-form="link"]')) return;
     if (event.key === '/') { event.preventDefault(); root.querySelector<HTMLInputElement>('[data-focus="search"]')?.focus(); return; }
     if (event.key.toLowerCase() === 'n') { event.preventDefault(); openCreate(); return; }
-    if (event.key.toLowerCase() === 'v') { layout = layout === 'board' ? 'table' : 'board'; render(); }
+    if (event.key.toLowerCase() === 'v' && view === 'all') { layout = layout === 'board' ? 'table' : 'board'; render(); }
   }
 
   function spotlightItem(target: EventTarget | null): HTMLElement | null {
@@ -1075,10 +1358,14 @@ export function mount(root: HTMLElement, transport: Transport): void {
       if (projectId) void refresh(); else void loadProjects();
     }
   }
+  function onScroll(event: Event): void {
+    if (event.target instanceof HTMLElement && event.target.dataset.windowContainer) scheduleWindows();
+  }
   root.addEventListener('click', onClick);
   root.addEventListener('input', onInput);
   root.addEventListener('change', onChange);
   root.addEventListener('submit', onSubmit);
+  root.addEventListener('scroll', onScroll, true);
   root.addEventListener('pointerover', onPointerOver);
   root.addEventListener('pointerout', onPointerOut);
   root.addEventListener('focusin', onFocusIn);
@@ -1099,10 +1386,13 @@ export function mount(root: HTMLElement, transport: Transport): void {
   function cleanup(): void {
     disposed = true;
     window.clearInterval(timer);
+    if (windowFrame) cancelAnimationFrame(windowFrame);
+    if (measureFrame) cancelAnimationFrame(measureFrame);
     root.removeEventListener('click', onClick);
     root.removeEventListener('input', onInput);
     root.removeEventListener('change', onChange);
     root.removeEventListener('submit', onSubmit);
+    root.removeEventListener('scroll', onScroll, true);
     root.removeEventListener('pointerover', onPointerOver);
     root.removeEventListener('pointerout', onPointerOut);
     root.removeEventListener('focusin', onFocusIn);

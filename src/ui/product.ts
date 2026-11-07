@@ -34,7 +34,7 @@ function confirmProductAction(message: string): Promise<boolean> {
   dialog.className = 'dialog product-confirm';
   dialog.setAttribute('aria-labelledby', 'product-confirm-heading');
   dialog.setAttribute('aria-describedby', 'product-confirm-message');
-  dialog.innerHTML = `<form method="dialog"><header class="dialog__header"><h2 id="product-confirm-heading">Confirm action</h2></header><div class="dialog__body"><p id="product-confirm-message"></p></div><footer class="dialog__actions"><button class="btn btn--text" value="cancel" autofocus>Cancel</button><button class="btn btn--filled" value="confirm">Confirm</button></footer></form>`;
+  dialog.innerHTML = `<form method="dialog"><header class="dialog__header"><h2 id="product-confirm-heading">Confirm action</h2></header><div class="dialog__body"><p id="product-confirm-message"></p></div><footer class="dialog__actions"><button class="btn btn--text" value="cancel" autofocus>Cancel</button><button class="btn btn--primary" value="confirm">Confirm</button></footer></form>`;
   dialog.querySelector('#product-confirm-message')!.textContent = message;
   dialog.addEventListener('keydown', (event) => event.stopPropagation());
   const { promise, resolve } = Promise.withResolvers<boolean>();
@@ -70,6 +70,7 @@ export function createProductUI(context: Context) {
   const documentStatus = new Map<string, string>();
   const documentErrors = new Map<string, string>();
   const documentsLoading = new Set<string>();
+  const expandedDocuments = new Set<string>();
   let manualPath = '';
   let filters: FilterListResult = { personal: [], project: [] };
   let filterName = '';
@@ -237,10 +238,16 @@ export function createProductUI(context: Context) {
     const links = documentLinks.get(key) || [];
     const manual = [...(manualDocuments.get(project) || [])].filter((path) => !links.some((link) => link.path === path));
     const rows = [...links.map((link) => ({ path: link.path, label: link.label, source: link.source })), ...manual.map((path) => ({ path, label: path, source: 'manual' }))];
-    return `<section class="detail__section"><h3>Documents</h3><p class="muted">Only checked documents are included in a handoff. Read their contents before sending.</p>${isUnavailable(project) ? '<p class="muted">Offline: previously loaded document contents may be out of date.</p>' : ''}
+    const expanded = expandedDocuments.has(key);
+    const visible = expanded ? rows : rows.slice(0, 3);
+    const disabled = busy || isUnavailable(project) ? ' disabled' : '';
+    return `<section class="detail__section"><h3>Documents</h3><p class="muted">Open a document in Orca. Preview and check it to include its contents in a handoff.</p>${isUnavailable(project) ? '<p class="muted">Offline: previously loaded document contents may be out of date.</p>' : ''}
       ${documentsLoading.has(key) ? '<p class="muted" role="status">Loading document links…</p>' : ''}${documentStatus.has(key) ? `<p class="muted" role="status">${escape(documentStatus.get(key))}</p>` : ''}${documentErrors.has(key) ? `<p class="detail__error" role="alert">${escape(documentErrors.get(key))} <button type="button" class="btn btn--text btn--sm" data-product-action="documents-retry" data-id="${escape(issue.id)}">Retry</button></p>` : ''}
-      ${rows.length ? `<ul class="product-list">${rows.map((row) => `<li><label class="check product-document"><input type="checkbox" data-product-change="include-document" data-path="${escape(row.path)}"${included.has(`${project}\0${row.path}`) ? ' checked' : ''}><span>${escape(row.label || row.path)} <span class="muted">${escape(row.path)} · ${escape(row.source)}</span></span></label><div class="detail__actions"><button type="button" class="btn btn--text btn--sm" data-product-action="document-read" data-path="${escape(row.path)}"${isUnavailable(project) ? ' disabled' : ''}>Read</button><button type="button" class="btn btn--text btn--sm" data-product-action="document-open" data-path="${escape(row.path)}"${isUnavailable(project) ? ' disabled' : ''}>Open</button></div>${documentRangeFields(project, row.path)}${documentResults.has(`${project}\0${row.path}`) ? `<pre class="command product-content">${escape(documentResults.get(`${project}\0${row.path}`)?.text)}</pre>` : ''}</li>`).join('')}</ul>` : isUnavailable(project) ? '<p class="muted">Document links are unavailable offline.</p>' : '<p class="muted">No linked Markdown documents. Add a project-relative path below.</p>'}
-      <div class="dependency-form"><label>Relative Markdown path<input data-product-input="manual-path" value="${escape(manualPath)}" placeholder="docs/plan.md"></label><button type="button" class="btn btn--outlined btn--sm" data-product-action="document-add"${busy || isUnavailable(project) || !manualPath.trim() ? ' disabled' : ''}>Read path</button><button type="button" class="btn btn--text btn--sm" data-product-action="document-open-manual"${busy || isUnavailable(project) || !manualPath.trim() ? ' disabled' : ''}>Open path</button></div></section>`;
+      ${rows.length ? `<div class="document-grid">${visible.map((row) => {
+        const name = row.path.split('/').pop() || row.path;
+        return `<div class="document-tile"><button type="button" class="document-tile__open" data-product-action="document-open" data-path="${escape(row.path)}" aria-label="${escape(`Open ${row.path} in Orca`)}" title="${escape(row.path)}"${disabled}><span class="document-tile__icon">${icon('description')}</span><span class="document-tile__name">${escape(name)}</span><span class="document-tile__path">${escape(row.path)}</span></button><div class="document-tile__actions"><label class="check"><input type="checkbox" data-product-change="include-document" data-path="${escape(row.path)}" aria-label="${escape(`Include ${row.path} in handoff`)}"${included.has(`${project}\0${row.path}`) ? ' checked' : ''}>Include</label><button type="button" class="btn btn--text btn--sm" data-product-action="document-read" data-path="${escape(row.path)}" aria-label="${escape(`Preview ${row.path}`)}"${disabled}>Preview</button></div></div>`;
+      }).join('')}</div>${rows.length > 3 ? `<button type="button" class="btn btn--text btn--sm" data-product-action="documents-expand" aria-expanded="${expanded}">${expanded ? 'Show fewer' : `Show ${rows.length - 3} more`}</button>` : ''}${visible.filter((row) => documentResults.has(`${project}\0${row.path}`)).map((row) => `<section class="document-preview" aria-label="${escape(`Preview ${row.path}`)}"><h4>${escape(row.path)}</h4>${documentRangeFields(project, row.path)}<pre class="command product-content">${escape(documentResults.get(`${project}\0${row.path}`)?.text)}</pre></section>`).join('')}` : isUnavailable(project) ? '<p class="muted">Document links are unavailable offline.</p>' : '<p class="muted">No linked Markdown documents. Add a project-relative path below.</p>'}
+      <div class="dependency-form"><label>Relative Markdown path<input data-product-input="manual-path" value="${escape(manualPath)}" placeholder="docs/plan.md"></label><button type="button" class="btn btn--outlined btn--sm" data-product-action="document-open-manual"${busy || isUnavailable(project) || !manualPath.trim() ? ' disabled' : ''}>Open in Orca</button><button type="button" class="btn btn--text btn--sm" data-product-action="document-add"${busy || isUnavailable(project) || !manualPath.trim() ? ' disabled' : ''}>Preview</button></div></section>`;
   }
 
   function handoffBody(): string {
@@ -338,6 +345,12 @@ export function createProductUI(context: Context) {
     if (action === 'handoff' || action === 'history' || action === 'filters' || action === 'worktree' || action === 'hosts') { await open(action); return true; }
     if (action === 'close') { close(); return true; }
     if (action === 'documents-retry') { documentLinks.delete(`${context.projectId()}\0${id}`); void loadDocuments(context.projectId(), id); return true; }
+    if (action === 'documents-expand') {
+      const key = `${context.projectId()}\0${context.issueId()}`;
+      if (expandedDocuments.has(key)) expandedDocuments.delete(key);
+      else expandedDocuments.add(key);
+      context.render(); return true;
+    }
     if (action === 'document-read' || action === 'document-open' || action === 'document-add' || action === 'document-open-manual') {
       const project = context.projectId();
       const manual = action === 'document-add' || action === 'document-open-manual';

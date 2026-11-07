@@ -1,6 +1,6 @@
 # Workflow service contract
 
-**Release: 0.2.0.** The owner explicitly requested publication with the documented limitations. This service contract is not proof of real model execution or full Q1–Q24 acceptance. Existing-session dispatch remains blocked by the native idle-only requirement below. See the [acceptance matrix](product-scope.md) and [observed evidence](verification.md).
+This document describes the plugin's workflow API and safety boundaries. Existing-session dispatch remains unavailable without the native idle-only requirement below. See [configuration and trust limits](integration-constraints.md).
 
 `src/orca/workflow.ts` supplies the worker-owned `WorkflowService(host, access, library)` instance. `WorkflowInputs`, `WorkflowResults`, and the discriminated `WorkflowRequest` are exported from `src/orca/workflow-types.ts`. All project/target inputs are **Project.id**, not filesystem paths or native CLI selectors. The service resolves the registered native workspace and execution host itself.
 
@@ -14,19 +14,29 @@
 - Context longer than 3,500 JavaScript code units is written in full to `.beads-orca/handoffs/<UUID>/context.md` on the target. The native launch receives a short instruction to read that exact file. No repository scan, hidden document inclusion, truncation, automatic Git staging, or database copying occurs.
 - The source database and target executor must be on the same execution host. Desktop access to two hosts does not give an agent on one host credentials to the other. Cross-host groups receive an explicit preview error rather than copying the database or assuming agent access.
 
-### Explicit document fragments (Q12)
+### Explicit document fragments
 
 `DocumentRef` and preview document records accept optional `startLine` and `endLine`. Omit both to include the whole file, unchanged from the whole-document behavior. When specified, both must be positive safe integers with `startLine <= endLine <=` the live file's line count. Bounds are **1-based and inclusive**, never clipped. For example, `{project: "<Project.id>", path: "docs/design.md", startLine: 10, endLine: 24}` explicitly selects those lines.
 
 Lines are LF-delimited and selected text preserves the original LF/CRLF terminators. A final LF does not create a phantom extra line; an empty file has no selectable lines. The preview, group, private history, and export retain the bounds. Document `text` contains only the selected lines, while `hash` identifies the **full original file**, so a change outside the selected excerpt also invalidates the approved preview. Selecting an excerpt does not bypass full-file read limits.
 
-After **Read**, the UI offers optional **First/Last** line inputs and retains the explicit inclusion checkbox. Invalid included ranges show inline errors and prevent preview; nothing is silently included or shortened. Imports validate paired bounds, excerpt line span, and agreement with the group. They cannot verify the original source/hash offline and remain inert, unverified archives.
+In the prepared 0.2.2 UI, a Markdown tile's primary action is `documents.open`: validate the registered workspace and confined path, then call native `editor.open`. There is no browser fallback. Preview reads contents separately; Include selects handoff context separately. Three tiles are initially visible; Show more reveals the rest. Manual project-relative paths offer Open in Orca first. No repository scan or agent-assisted link suggestion is performed.
 
-### Actionable stale-preview rejection (Q19)
+After **Preview**, the UI offers optional **First/Last** line inputs and retains the explicit inclusion checkbox. Invalid included ranges show inline errors and prevent handoff preview; nothing is silently included or shortened. Imports validate paired bounds, excerpt line span, and agreement with the group. They cannot verify the original source/hash offline and remain inert, unverified archives.
+
+### Saved epic filters
+
+The optional filter field is `epic: {id: string | null, projectName: string, hostName: string}`. Omission means all epics; `id: null` means verified no epic. A string selects that epic and its parent-child descendants, including the clearly typed epic row. Missing parents do not imply No epic; traversal is cycle-safe.
+
+Applying a saved epic requires exactly one registered project matching both portable names. Missing or ambiguous matches are refused rather than applying a task ID to another database. Explicit project changes clear the epic. Existing saved filters without the field retain their meaning; the storage format remains version 1. Status views use Table without overwriting All issues' stored layout.
+
+
+
+### Actionable stale-preview rejection
 
 Send compares freshly read context with the stored preview fingerprint. A mismatch rejects the draft with changed categories and useful task IDs/document paths where available: **Issues**, **Documents**, **Recipient**, **Workspace**, **Dependencies**, and **Readiness/Eligibility**. Optional stored revalidation details cover native workspace identity, dependency hashes, readiness, and provider availability. Older history without those details stays readable; diagnostics disclose when comparison detail is unavailable.
 
-The approved prompt is not replaced. A known stale mismatch is saved as **rejected**, shown as such in the UI, and requires an explicit new preview even if the original context later returns. It is not labeled unknown delivery; actual transport ambiguity still is. Revalidation does not atomically freeze Beads, documents, or sessions, so executors must still check live state before work. Fragment boundaries and actionable rejection have regression and native-panel evidence in [verification](verification.md).
+The approved prompt is not replaced. A known stale mismatch is saved as **rejected**, shown as such in the UI, and requires an explicit new preview even if the original context later returns. It is not labeled unknown delivery; actual transport ambiguity still is. Revalidation does not atomically freeze Beads, documents, or sessions, so executors must still check live state before work.
 
 ### Native transport and unresolved existing-session requirement
 
@@ -36,7 +46,7 @@ A terminal handle or generic `accepted` response is not proof of prompt delivery
 
 **Existing-session dispatch is intentionally unavailable, not implemented with a precheck.** Installed Orca 1.4.250 has durable terminal-send request IDs, replay, and `turn_started` observations, but does not atomically reject a working agent. Upstream tag 1.4.252 still checks permission state, liveness, and process incarnation rather than an idle-only condition immediately before input. A serialized plugin prompt hook does not solve this: its payload has no authoritative activity state, its asynchronous decision precedes the actual submission critical section, and human input bypasses that hook order.
 
-Minimum upstream fix: an idle-only conditional on native terminal send, checked against authoritative activity, permissions, and process incarnation in the actual submission critical section immediately before PTY input, with an explicit refusal receipt and remote-host support. Until that exists, discovered sessions expose `sendable: false` and explain how to choose a new session. This is an **unwaived upstream blocker**, not a completed existing-session feature or full-scope acceptance.
+Minimum upstream fix: an idle-only conditional on native terminal send, checked against authoritative activity, permissions, and process incarnation in the actual submission critical section immediately before PTY input, with an explicit refusal receipt and remote-host support. Until that exists, discovered sessions expose `sendable: false` and explain how to choose a new session.
 
 Primary sources inspected without agent launch:
 
@@ -79,6 +89,4 @@ Document and reported-file opening use metadata-only inspection, without a text-
 
 Public seams are `WorkflowService.request`, the native CLI boundary, report/import validation, and native private storage. Deterministic coverage includes preview freshness, document/mapping changes, blockers, disabled unsafe existing-session delivery, ambiguous launch/no retry, quota-before-effects, chunked history round-trip, imported-history safety, explicit report publication/cleanup, confined reported-file navigation without content reads, native worktree intent, host routing, and bounded paging. These unit tests do not launch real agents or write a real Beads database.
 
-The integration owner observed real native panel previews, provider discovery, history/filter actions, and isolated native worktree creation. A separate **test-only copy** of the built plugin used a launch adapter returning an explicitly synthetic `journaled` receipt, while other native CLI calls stayed real. That adapter smoke exercised exact context-file content, fixture report reading, native reported-file opening, one real concise Beads comment without closing/claiming the task, and confined artifact cleanup. It did **not** launch an agent, model, or terminal and does not verify native dispatch. Details and historical checkpoints are in [verification](verification.md).
-
-Typecheck/build, 65 tests, real-`bd` smoke and package/resource checks passed in Ubuntu/macOS CI. The local UI detector returned no findings. Native fragment selection, stale rejection and public Git installation were observed on Linux. Actual model execution, native Orca UI on macOS and real paired-runtime behavior remain unverified. Existing-session idle-only dispatch remains the unwaived blocker above. Exact commits and links are in [verification](verification.md).
+Actual model execution, native Orca UI on macOS and real paired-runtime behavior remain unverified. Unit tests and provider discovery do not establish an end-to-end model/report round trip.

@@ -1,6 +1,6 @@
 # Orca and Beads integration constraints
 
-**Release: 0.2.0.** Published at the owner's explicit request with the existing-session limitation retained. Local/SSH access and explicit workflow operations are implemented; full Q1–Q24 acceptance is not claimed. Existing-session dispatch needs an upstream native atomic idle-only gate. Source contracts, runtime evidence and outstanding acceptance are distinguished in [workflow](workflow.md), [verification](verification.md) and the [scope matrix](product-scope.md). Investigation used Orca 1.4.250 / Host API 1.3 and Beads 1.3.2; inspection of Orca 1.4.252 did not resolve that gate.
+Local/SSH access and explicit workflow operations use Orca's native workspace identities. Existing-session dispatch needs an upstream atomic idle-only gate. The [workflow contract](workflow.md) describes application behavior. These constraints were inspected against Orca 1.4.250 / Host API 1.3 and Beads 1.3.2; inspection of Orca 1.4.252 did not resolve that gate.
 
 ## Remote configuration and execution
 
@@ -40,11 +40,11 @@ The CLI child strips inherited `ELECTRON_RUN_AS_NODE`, `ORCA_PAIRING_CODE`, and 
 
 A terminal handle or `accepted` response is not delivery proof. Only an explicit native `prompt.outcome` is recorded as `journaled` (durable retention) or `handed-to-terminal` (terminal handoff). Neither proves a started model turn, Claim, or task completion. Unknown/error receipts remain unknown; an attempt is journaled before file writes/launch and is never automatically resent. Actual model launch and report return have **not** been observed end to end.
 
-### Unwaived existing-session acceptance blocker
+### Existing-session limitation
 
 Existing sessions are discovered but returned with `sendable: false`. Orca 1.4.250 and inspected upstream 1.4.252 have no atomic idle-only check in the terminal submission critical section. `agents.list` followed by send races with human/agent input. A prompt hook cannot repair this: its asynchronous decision precedes submission, lacks authoritative activity state, and does not serialize human input. Waiting for permission is not idle.
 
-Required upstream contract: check authoritative idle state, process incarnation, and permissions **immediately before PTY input inside native submission**, including remote execution, and return an explicit refusal receipt if conditions changed. There is no unsafe precheck/send fallback, no hidden queue, and no full-scope completion claim while this remains absent.
+Required upstream contract: check authoritative idle state, process incarnation, and permissions **immediately before PTY input inside native submission**, including remote execution, and return an explicit refusal receipt if conditions changed. There is no unsafe precheck/send fallback or hidden queue.
 
 Primary native sources:
 
@@ -74,13 +74,11 @@ The transfer store bounds each serialized result to 32 MiB, retained UTF-16 text
 
 History retains its paged export/chunked import contract. Source: [worker transfer store](../src/orca/reply-transfer.ts), [panel transport](../src/orca/panel-transport.ts), [shared limits](../src/orca/transfer-protocol.ts). Detailed application paging contracts are in [workflow](workflow.md).
 
-## Worktrees and remaining acceptance
+## Worktrees and verification limits
 
 Native `worktree create` is previewed and explicit, uses `--no-parent --setup skip`, and requests no agent. Native default tabs may still open; returned identity/branch is authoritative if Orca suffixes a name. No database copy, automatic worktree removal, merge, rebase, or push occurs. Real isolated worktree preview/create was observed; this is not an observed model launch.
 
-Typecheck/build, 65 tests, real-`bd` smoke and package/resource checks passed in Ubuntu/macOS CI. The local UI detector returned no findings. Linux real-SSH/offline, native-panel/worktree and public Git-installation observations are recorded separately in verification. Native Orca UI on macOS, real paired-runtime behavior and actual model execution remain unverified. CI does not waive these limits or the native idle-only acceptance gate.
-
-A later isolated smoke intercepted only `agent launch` in a test-only plugin copy with a synthetic `journaled` receipt. It exercised real context/report file operations, native editor navigation, one real concise Beads comment, and confined cleanup; it launched no agent/model/terminal. See [the explicitly labeled adapter evidence](verification.md#test-only-launch-adapter-smoke-not-native-agent-dispatch), not a native delivery claim.
+Native Orca UI on macOS, real paired-runtime behavior and actual model execution remain unverified. CI does not establish those behaviors or remove the native idle-only restriction.
 
 Historical alternatives and upstream context:
 
