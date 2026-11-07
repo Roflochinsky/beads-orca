@@ -282,11 +282,14 @@ export function mount(root: HTMLElement, transport: Transport): void {
   const windows = new Map<string, WindowState>();
   let windowFrame = 0;
   let measureFrame = 0;
+  function updateOffsets(state: WindowState): void {
+    state.offsets[0] = 0;
+    for (let index = 0; index < state.heights.length; index++) state.offsets[index + 1] = state.offsets[index]! + state.heights[index]!;
+  }
   function registerWindow(key: string, items: Issue[], estimate: number, table: boolean): void {
-    const heights = items.map(() => estimate);
-    const offsets = [0];
-    for (const height of heights) offsets.push(offsets[offsets.length - 1]! + height);
-    windows.set(key, { items, heights, offsets, estimate, table });
+    const state = { items, heights: items.map(() => estimate), offsets: [0], estimate, table };
+    updateOffsets(state);
+    windows.set(key, state);
   }
   function tableContent(issues: Issue[]): string {
     const headers: Array<[SortKey, string]> = [
@@ -393,8 +396,7 @@ export function mount(root: HTMLElement, transport: Transport): void {
         if (height > 0 && Math.abs(height - state.heights[index]!) > 0.5) { state.heights[index] = height; localChange = true; }
       }
       if (!localChange) continue;
-      state.offsets[0] = 0;
-      for (let index = 0; index < state.heights.length; index++) state.offsets[index + 1] = state.offsets[index]! + state.heights[index]!;
+      updateOffsets(state);
       container.scrollTop += state.offsets[anchor]! - oldAnchor;
       changed = true;
     }
@@ -450,13 +452,11 @@ export function mount(root: HTMLElement, transport: Transport): void {
     }).join('')}</div>`;
   }
 
-  function filters(): string {
+  function filters(hiddenSelection: number): string {
     const issueTypes = [...new Set(allIssues().map((issue) => issue.type))].sort();
     const assignees = [...new Set(allIssues().map((issue) => issue.assignee).filter(Boolean))].sort();
     const activeFilters = Number(!!typeFilter) + Number(!!priorityFilter) + Number(!!assigneeFilter) + Number(!!epicFilter)
       + Number(!!(scope?.projectNames.length || scope?.hostNames.length));
-    const visibleIds = new Set(filtered().map((issue) => issue.id));
-    const hiddenSelection = [...taskPool.values()].filter((item) => item.project !== projectId || !visibleIds.has(item.id)).length;
     return `<div class="filters${filtersExpanded ? ' filters--expanded' : ''}"><button type="button" class="btn btn--outlined btn--sm filters__toggle" data-action="toggle-filters" aria-expanded="${pressed(filtersExpanded)}" aria-controls="issue-filters">Filters${activeFilters ? ` (${activeFilters})` : ''}${icon('arrow_drop_down')}</button><div id="issue-filters" class="filter-bar${filtersExpanded ? ' filter-bar--expanded' : ''}" aria-label="Filters"><label><span class="visually-hidden">Type</span><select data-change="type" data-focus="type" aria-label="Filter by type"><option value="">All types</option>${issueTypes.map((type) => `<option value="${escapeHtml(type)}"${selected(typeFilter, type)}>${escapeHtml(type)}</option>`).join('')}</select></label><label><span class="visually-hidden">Priority</span><select data-change="priority" data-focus="priority" aria-label="Filter by priority"><option value="">All priorities</option>${[0, 1, 2, 3, 4].map((value) => `<option value="${value}"${selected(priorityFilter, String(value))}>P${value}</option>`).join('')}</select></label><label><span class="visually-hidden">Assignee</span><select data-change="assignee" data-focus="assignee" aria-label="Filter by assignee"><option value="">All assignees</option>${assignees.map((assignee) => `<option value="${escapeHtml(assignee)}"${selected(assigneeFilter, assignee)}>${escapeHtml(assignee)}</option>`).join('')}</select></label>${view === 'all' ? `<label class="check"><input type="checkbox" data-change="closed"${showClosed ? ' checked' : ''}> Include closed</label>` : view === 'closed' ? '<span class="muted">Closed issues are always visible here</span>' : ''}<button class="btn btn--text btn--sm" type="button" data-action="clear-filters">Clear filters</button><span class="filter-bar__spacer"></span><span class="muted">${snapshot ? `${filtered().length} shown` : 'Issues not loaded'}${taskPool.size ? ` · ${taskPool.size} selected${hiddenSelection ? ` · ${hiddenSelection} hidden by filters or project` : ''}` : ''}</span>${taskPool.size ? '<button class="btn btn--text btn--sm" type="button" data-action="clear-pool">Clear selection</button>' : ''}</div></div>`;
   }
 
@@ -563,7 +563,7 @@ export function mount(root: HTMLElement, transport: Transport): void {
     return `<div class="main__head"><div class="main__title-row"><h1 class="visually-hidden" tabindex="-1" data-focus="board-heading">${view === 'all' ? 'All issues' : escapeHtml(groupNames[view])}</h1><div class="summary" role="group" aria-label="Issue views">${groups.map((group) => {
       const label = group === 'all' ? 'All issues' : groupNames[group];
       return `<button type="button" class="view-button" data-action="view" data-value="${group}" data-focus="header-view-${group}" aria-pressed="${pressed(view === group)}" aria-label="${escapeHtml(label)}, ${count(group)} issues matching filters"><span>${escapeHtml(label)}</span><span class="view-button__count" aria-hidden="true">${snapshot ? count(group) : '—'}</span></button>`;
-    }).join('')}</div><div class="segmented" role="group" aria-label="Issue layout"><button type="button" data-action="layout" data-value="board" aria-pressed="${pressed(effectiveLayout === 'board')}"${view !== 'all' ? ' disabled title="Board is available in All issues; status views use Table"' : ' title="Board layout"'}>${icon('view_kanban')}Board</button><button type="button" data-action="layout" data-value="table" aria-pressed="${pressed(effectiveLayout === 'table')}" title="Table layout">${icon('table_rows')}Table</button></div></div><p class="scope-note"><strong>Scope:</strong> ${escapeHtml(scopeParts.join(' · '))}${view === 'all' ? ` · closed ${showClosed ? 'included' : 'hidden'}` : ''}${snapshot ? ` · ${filtered().length} shown` : ''}${taskPool.size ? ` · ${taskPool.size} selected${hiddenSelection ? ` · ${hiddenSelection} hidden by filters or project` : ''}` : ''}${offline() && snapshot ? ' · stale' : ''}</p><div class="main__tools">${filters()}<div class="product-controls">${product.controls()}<button type="button" class="btn btn--icon" data-action="spotlight" aria-label="Highlight dependencies" aria-pressed="${pressed(spotlightOn)}" title="Highlight dependencies on hover or focus">${icon('account_tree')}</button></div></div>${scope ? '<p class="muted">Saved filter scope limits project choices. Clear filters to see all projects.</p>' : ''}</div>`;
+    }).join('')}</div><div class="segmented" role="group" aria-label="Issue layout"><button type="button" data-action="layout" data-value="board" aria-pressed="${pressed(effectiveLayout === 'board')}"${view !== 'all' ? ' disabled title="Board is available in All issues; status views use Table"' : ' title="Board layout"'}>${icon('view_kanban')}Board</button><button type="button" data-action="layout" data-value="table" aria-pressed="${pressed(effectiveLayout === 'table')}" title="Table layout">${icon('table_rows')}Table</button></div></div><p class="scope-note"><strong>Scope:</strong> ${escapeHtml(scopeParts.join(' · '))}${view === 'all' ? ` · closed ${showClosed ? 'included' : 'hidden'}` : ''}${snapshot ? ` · ${filtered().length} shown` : ''}${taskPool.size ? ` · ${taskPool.size} selected${hiddenSelection ? ` · ${hiddenSelection} hidden by filters or project` : ''}` : ''}${offline() && snapshot ? ' · stale' : ''}</p><div class="main__tools">${filters(hiddenSelection)}<div class="product-controls">${product.controls()}<button type="button" class="btn btn--icon" data-action="spotlight" aria-label="Highlight dependencies" aria-pressed="${pressed(spotlightOn)}" title="Highlight dependencies on hover or focus">${icon('account_tree')}</button></div></div>${scope ? '<p class="muted">Saved filter scope limits project choices. Clear filters to see all projects.</p>' : ''}</div>`;
   }
 
   function bodyState(): string {
@@ -640,9 +640,7 @@ export function mount(root: HTMLElement, transport: Transport): void {
     drawer.hidden = !issue;
     drawer.scrollTop = issue?.id === renderedDetailId ? drawerTop : 0;
     drawer.setAttribute('role', 'dialog');
-    const mobileDrawer = !!issue && window.matchMedia('(max-width: 767px)').matches;
-    if (mobileDrawer) drawer.setAttribute('aria-modal', 'true'); else drawer.removeAttribute('aria-modal');
-    for (const background of root.querySelectorAll<HTMLElement>('.app-bar, .rail, .main')) background.inert = mobileDrawer;
+    syncDrawerModality();
     root.querySelector('.app')?.classList.toggle('app--drawer-open', !!issue);
     patchIsland('create', createDialog());
     patchIsland('product', product.dialog());
@@ -920,8 +918,8 @@ export function mount(root: HTMLElement, transport: Transport): void {
       const project = projects.find((item) => item.id === projectId);
       const hostName = project ? portableHostName(project) : '';
       const id = value === 'none' ? null : value.startsWith('id:') ? value.slice(3) : '';
-      if (!project || !hostName || (id !== null && model?.byId.get(id)?.type !== 'epic')) {
-        actionError = 'Choose an epic in a registered project with a portable host name.';
+      if (!project || (id !== null && model?.byId.get(id)?.type !== 'epic')) {
+        actionError = 'Choose an epic in the selected project.';
         render(); return;
       }
       epicFilter = { id, projectName: project.name, hostName };
@@ -987,16 +985,19 @@ export function mount(root: HTMLElement, transport: Transport): void {
     if (menu && event.target instanceof Node && !menu.contains(event.target)) menu.open = false;
   }
 
-  function onResize(): void {
-    if (projectPickerOpen) setProjectPicker(true);
+  function syncDrawerModality(): void {
     const mobileDrawer = !!currentIssue() && window.matchMedia('(max-width: 767px)').matches;
     for (const background of root.querySelectorAll<HTMLElement>('.app-bar, .rail, .main')) background.inert = mobileDrawer;
     const drawer = root.querySelector<HTMLElement>('.drawer');
     if (mobileDrawer) drawer?.setAttribute('aria-modal', 'true'); else drawer?.removeAttribute('aria-modal');
+  }
+
+  function onResize(): void {
+    if (projectPickerOpen) setProjectPicker(true);
+    syncDrawerModality();
     for (const state of windows.values()) {
       state.heights.fill(state.estimate);
-      state.offsets[0] = 0;
-      for (let index = 0; index < state.heights.length; index++) state.offsets[index + 1] = state.offsets[index]! + state.heights[index]!;
+      updateOffsets(state);
     }
     scheduleWindows();
   }

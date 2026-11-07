@@ -10,12 +10,12 @@
 
 ## Install the stable release
 
-Current release: **v0.2.1**. Install the native plugin directly from Git; no source build or development link is needed. Existing-session handoff remains disabled. Community-catalog discovery is separate and may require review.
+Current release: **v0.2.2**. Install the native plugin directly from Git; no source build or development link is needed. Existing-session handoff remains disabled. Community-catalog discovery is separate and may require review.
 
 In Orca, open **Settings → Plugins → Add plugin → From Git URL** and enter:
 
 ```text
-https://github.com/Roflochinsky/beads-orca#v0.2.1
+https://github.com/Roflochinsky/beads-orca#v0.2.2
 ```
 
 Alternatively, use the [Orca community catalog](https://onorca.dev/plugins/roflochinsky.beads?catalog=community) once listed. Check the [listing status](https://www.onorca.dev/plugins/roflochinsky/beads-orca) if it is not available there; Git installation does not require a community listing.
@@ -43,9 +43,9 @@ Choose a project by its workspace, host and full path in the project picker. Ide
 | --- | --- |
 | [![Sortable table of demo issues](docs/images/table.png)](docs/images/table.png) | [![Demo issue details and dependencies](docs/images/detail.png)](docs/images/detail.png) |
 
-## Prepared update — 0.2.2, not yet published
+## New in 0.2.2
 
-The working tree includes the approved sidebar and performance update:
+The approved navigation and performance update:
 
 - **Navigate by epic.** Epics sit below Views. Select an epic and its descendants, or No epic, while retaining the selected status.
 - **Use consistent views.** Ready, In progress, Blocked, Closed and Deferred open tables. All issues remembers Board/Table. Header and sidebar counts use the same filters.
@@ -53,7 +53,7 @@ The working tree includes the approved sidebar and performance update:
 - **Open documents in Orca.** Markdown tiles open the workspace editor. Preview and Include remain separate; Show more reveals additional attachments.
 - **Keep large lists responsive.** Board and table render visible windows without truncating the loaded task set.
 
-The local plugin-only archive is `release/beads-orca-0.2.2.tar.gz`. The stable installation URL above remains **v0.2.1** until publication. Agent-assisted document suggestions are not part of this update.
+Download the plugin-only archive from [release v0.2.2](https://github.com/Roflochinsky/beads-orca/releases/tag/v0.2.2). Agent-assisted document suggestions are not part of this update. Epic navigation works without an SSH display name; saving a portable epic filter requires one.
 
 
 ## Stable release limits

@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.2 — Unreleased
+## 0.2.2 — 2026-11-07
 
 - Moved New issue into the workspace sidebar, with one visible creation action and the existing keyboard shortcut.
 - Added Epics below Views, descendant-aware filtering, explicit No epic, and portable project/host-qualified saved epic filters. Missing ancestry is not treated as No epic.
@@ -8,8 +8,10 @@
 - Replaced whole-panel rebuilding with independently updated regions and measured, overscanned board/table windows. Filtering and selection still cover the complete snapshot.
 - Kept the detail close button visible, moved focus into details, restored focus on close, and made Escape close the foreground surface before clearing search.
 - Presented Markdown links as document tiles with filenames, independent Preview/Include actions and Show more. Clicking a tile opens the file in its Orca workspace editor, without a browser fallback.
-- Passed 91 tests, real-`bd` smoke, source/bundle validation and resource/checksum checks. This package is prepared locally, not published or installed in the user's profile.
+- Passed 91 tests, real-`bd` smoke, source/bundle validation and resource/checksum checks.
 - Excluded local planning, review discussions and harness records from Git while retaining plugin code, CI and public technical documentation.
+- Fixed epic navigation for supported SSH projects without an optional display name; portable saved filters still require a named host.
+- Removed duplicate selection scans, drawer modality updates and virtual-window offset calculations identified in review.
 
 ## 0.2.1 — 2026-11-07
 
