@@ -44,6 +44,13 @@ test('projects are host-owned and unregistered paths or commands cannot reach bd
     await assert.rejects(handleRequest({ method: 'update', project: project.id, input: { id: 'one' } }, [project]), /at least one/i);
   });
 });
+test('a remote project cannot fall through to the local bd executable', async () => {
+  await withBd('process.stderr.write("LOCAL BD MUST NOT RUN"); process.exit(99);', async (project) => {
+    const remote = { ...project, id: 'remote-twin', hostId: 'ssh:remote' };
+    await assert.rejects(handleRequest({ method: 'snapshot', project: remote.id }, [remote]), /remote|ssh|transport/i);
+  });
+});
+
 
 test('snapshot includes closed and nonstandard states, full edges, and uncapped native ready/blocked membership', async () => {
   const issues = Array.from({ length: 201 }, (_, index) => ({

@@ -1,64 +1,84 @@
-# Ограничения интеграции Orca и Beads
+# Orca and Beads integration constraints
 
-Статус: исследование для согласованного продуктового scope, не описание уже реализованной интеграции. Проверялись первичные источники Orca 1.4.250 / Host API 1.3 и Beads 1.3.2. Во время исследования агенты не запускались, пользовательские базы не изменялись.
+**0.2.0 source is UNRELEASED; public stable installation remains v0.1.2.** The source implements local/SSH project access and explicit workflow operations. This is not a claim of full Q1–Q24 acceptance: existing-session dispatch needs an upstream native atomic idle-only gate. Source contracts, observed runtime evidence, and outstanding acceptance are distinguished in [workflow](workflow.md), [verification](verification.md), and the [scope matrix](product-scope.md). Original investigation used Orca 1.4.250 / Host API 1.3 and Beads 1.3.2; later inspection of Orca 1.4.252 did not resolve that gate.
 
-## Доставка поручений
+## Remote configuration and execution
 
-- `agent.launch` возвращает `terminalId`. Отправка первого prompt продолжается отдельно; результат запуска не является квитанцией получения поручения.
-- Поле `agent.launch.prompt` ограничено `TEXT_MAX = 4096` по длине JS-строки. В схеме нет параметров `env`, `model` или `effort`. Большой контекст нельзя молча обрезать или выдавать за полностью доставленный.
-- `terminal.sendText` возвращает `accepted`, но не предоставляет плагину durable request ID, ожидание начала хода или replay. Binding установленной версии проверяет принадлежность терминала сфокусированному workspace.
-- Предварительный `agents.list` и последующая отправка не являются атомарной проверкой занятости. Для строгого требования не вмешиваться в занятый агент нужен поддерживаемый путь с проверкой на стороне отправки, а не только отключённая кнопка по старому снимку.
-- Статусы и необязательный outcome агентского хода не содержат идентификатора поручения Beads. Они не доказывают завершение конкретного пула задач.
+The trusted Node worker runs on the desktop; selecting a remote workspace does not move it. `ProjectAccess` resolves registered native workspace IDs, paths, and hosts. Local projects use installed `bd`; remote projects use the same native CLI through **system SSH**, not terminal-screen parsing, direct database access, or `bd serve`.
 
-Источники:
+Set **Remote Beads SSH connections** (`remoteHosts`) to a JSON object keyed by the exact Orca workspace `hostId` shown for the project. For example, replace the sample ID and connection values with your own:
 
-- [Параметры workspace-методов, включая TEXT_MAX и agent.launch](https://github.com/stablyai/orca/blob/v1.4.250/src/shared/plugins/workers/plugin-host-api-workspace-methods.ts).
-- [Binding запуска и отложенной отправки](https://github.com/stablyai/orca/blob/v1.4.250/src/main/plugins/workers/plugin-host-workspace-method-bindings.ts).
-- [Binding terminal.sendText](https://github.com/stablyai/orca/blob/v1.4.250/src/main/plugins/workers/plugin-host-method-bindings.ts).
-- [Ожидание готовности первого prompt](https://github.com/stablyai/orca/blob/v1.4.250/src/main/runtime/rpc/methods/agent-launch-terminal-prompt.ts).
-- [Структура событий](https://github.com/stablyai/orca/blob/v1.4.250/src/shared/plugins/events/plugin-events.ts).
+```json
+{
+  "ssh:example-host-id": {
+    "destination": "beads-build",
+    "configFile": "/home/example/.ssh/config",
+    "name": "Build host"
+  }
+}
+```
 
-## Claim и идентичность
+- `destination` is a configured system SSH alias or destination, not an arbitrary shell command. `configFile` is optional and must be an absolute path **on the desktop**; it is passed as `ssh -F`. `name` is an optional portable display label used by shared filter scopes. No other mapping keys are accepted. Do not put credentials in this setting.
+- SSH uses `BatchMode=yes`, `ConnectTimeout=8`, no PTY, and cleared forwardings. Configure keys/agent access and known-host trust separately; the plugin neither extracts Orca secrets nor performs interactive authentication. No remote server/helper installation or port opening is performed.
+- The execution host needs an initialized `.beads/` project and `bd` 1.3.2 on its noninteractive PATH. Remote execution requires a POSIX-compatible shell. Confined file reads, metadata inspection, writes, and cleanup require **POSIX filesystem semantics and `python3` on the workspace host**, including local file access. This is not a Windows parity claim.
+- `projectPaths` remains newline-separated **local** absolute paths. A remote path with the same spelling is never treated as a local substitute.
+- A `runtime:…`/paired host ID may be explicitly mapped to an SSH destination for file/Beads access. Without that mapping it stays visible as unsupported; there is no general paired-runtime file/exec adapter. Native paired CLI addressing is implemented but a real paired environment has not been exercised.
+- **Source Beads project and target code workspace must have the same execution-host identity.** Desktop access to both hosts does not grant the target agent cross-host credentials. Separate worktrees can share a source database only through that original same-host source directory; the plugin never copies `.beads`.
+- Current-workspace identification requires a unique native name/branch match. Ambiguous matches do not silently pick a workspace. Truncated native workspace lists are explicit errors.
 
-- Native Claim использует actor вызывающего процесса. Чужой assignee отклоняется с учётом явно настроенных claim pools; повторный Claim того же actor для уже принадлежащей ему задачи может быть идемпотентным успехом.
-- Actor — заявленная строка, не аутентифицированная личность. Одно общее имя `codex` для параллельных сессий не даёт им разных владельцев задач.
-- Текущий RPC плагина принимает для Claim только ID и наследует окружение. Он не назначает идентичность выбранной агентской сессии.
-- Claim выбранного ID не является атомарной проверкой всего графа готовности. Предварительное чтение snapshot/ready не устраняет гонки.
-- Heartbeat, окончание lease, освобождение Claim и остановка процесса — разные события. Истечение lease не доказывает остановку агента.
+Offline snapshots are compressed/chunked in private native storage and retain the original fetch time after worker restart. Offline data is visibly stale; writes and new handoffs are blocked. Private history/filter controls remain available. Storage failure is visible, not a promise of unlimited offline retention.
 
-Источники:
+Access checks pin workspace/path/host and the SSH destination/config-file-path fingerprint. Editing that mapping invalidates captured identities. **Changing the contents of the same SSH config file is not detected by this fingerprint**: keep config, aliases, and host routing trusted and stable during an operation.
 
-- [Native Claim](https://github.com/gastownhall/beads/blob/v1.3.2/internal/storage/issueops/claim.go).
-- [Сравнение actor](https://github.com/gastownhall/beads/blob/v1.3.2/internal/storage/issueops/identity.go).
-- [Native lease](https://github.com/gastownhall/beads/blob/v1.3.2/internal/storage/issueops/lease.go).
-- [Текущий Beads-адаптер](../src/core/service.ts).
+Sources: [project access](../src/orca/projects.ts), [native Beads/SSH adapter](../src/core/service.ts), [settings and capabilities](../orca-plugin.json).
 
-## Документы и результат
+## Native dispatch and profile boundary
 
-`editor.open` принимает путь внутри workspace, не произвольный абсолютный путь. Для отчёта о задачах нужен согласованный канал с идентификаторами поручения и задач: обычный текст терминала и событие done не являются таким отчётом. Конкретный формат и место отчёта пока не выбраны; публикация общего отчёта в Beads остаётся явным действием пользователя.
+New sessions use the native CLI `agent launch --surface terminal`, with explicit workspace/host selectors. Local and SSH targets address the desktop runtime; explicitly mapped paired targets use a native environment selector. Installed provider registry IDs are Claude, Codex, OMP, Pi, Grok, Gemini, OpenCode, Amp, Aider, Goose, and Copilot. Discovery checks target-host executable presence only: it does **not** prove login, API credentials, model availability, billing access, or readiness. Provider setup belongs to the existing native CLI, not a second plugin model runtime.
 
-## Remote и worktree
+The CLI child strips inherited `ELECTRON_RUN_AS_NODE`, `ORCA_PAIRING_CODE`, and `ORCA_ENVIRONMENT`. Although the child wrapper preserves `ORCA_USER_DATA_PATH` if present, **Orca strips that variable before starting the plugin worker**. Observed worker-side CLI discovery therefore used the standard HOME profile. A private native fixture exposed its own profile at `HOME/.config/orca`; no real user profile was touched. Custom nondefault-profile dispatch is not supported/proven; do not assume an externally configured CLI profile reaches the worker.
 
-Host API не предоставляет структурированный remote exec или произвольное чтение/запись файлов. Собственный worker плагина не перемещается на хост выбранного workspace. `terminal.read` — ограниченный текст экрана, не контракт stdout/stderr/exit code. Текущий адаптер запускает локальный `bd`; удаление фильтра remote-workspace не сделает его удалённым.
+A terminal handle or `accepted` response is not delivery proof. Only an explicit native `prompt.outcome` is recorded as `journaled` (durable retention) or `handed-to-terminal` (terminal handoff). Neither proves a started model turn, Claim, or task completion. Unknown/error receipts remain unknown; an attempt is journaled before file writes/launch and is never automatically resent. Actual model launch and report return have **not** been observed end to end.
 
-CLI Orca поддерживает создание worktree на настроенном SSH-хосте или paired runtime. Это отдельная зависимость и разрешение project/host через CLI, а не отсутствующий метод `workspace.create` в Host API.
+### Unwaived existing-session acceptance blocker
 
-Кандидат `bd serve` через SSH-forward требует отдельного процесса и настройки endpoint. В Beads 1.3.2 он отказывает embedded Dolt; HTTP-записи не воспроизводят CLI hooks и обычный per-command auto-commit. Поэтому такой путь нельзя обещать как прозрачную замену CLI. Самостоятельный системный SSH сохраняет возможность вызова CLI, но не получает автоматически секреты и авторизацию Orca.
+Existing sessions are discovered but returned with `sendable: false`. Orca 1.4.250 and inspected upstream 1.4.252 have no atomic idle-only check in the terminal submission critical section. `agents.list` followed by send races with human/agent input. A prompt hook cannot repair this: its asynchronous decision precedes submission, lacks authoritative activity state, and does not serialize human input. Waiting for permission is not idle.
 
-Paired runtime и SSH-workspace — разные случаи. Полноту списка paired-workspace, доступ к их процессам и размещение plugin worker нельзя выводить из наличия pairing. Remote runtime, HTTP-сервер и port forward в этом исследовании не запускались.
+Required upstream contract: check authoritative idle state, process incarnation, and permissions **immediately before PTY input inside native submission**, including remote execution, and return an explicit refusal receipt if conditions changed. There is no unsafe precheck/send fallback, no hidden queue, and no full-scope completion claim while this remains absent.
 
-Источники:
+Primary native sources:
 
-- [Host API](https://github.com/stablyai/orca/blob/v1.4.250/docs/reference/plugin-host-api.md).
-- [Запрос remote worker](https://github.com/stablyai/orca/issues/37788) и [сообщения о неполном paired workspace.list](https://github.com/stablyai/orca/issues/30852): upstream-проблемы, не воспроизведённые здесь.
-- [bd serve установленного коммита](https://github.com/gastownhall/beads/blob/9b65b9e198acbcc98e7fd3a87a5d55baa065a572/cmd/bd/serve.go).
-- [HTTP API того же коммита](https://github.com/gastownhall/beads/blob/9b65b9e198acbcc98e7fd3a87a5d55baa065a572/internal/httpapi/spec/openapi.v0.yaml).
+- [Host API workspace methods: `TEXT_MAX`, `agent.launch`](https://github.com/stablyai/orca/blob/v1.4.250/src/shared/plugins/workers/plugin-host-api-workspace-methods.ts): the Host API prompt is limited to 4,096 JS code units and has no `env`, `model`, or `effort` fields. The implementation uses the native CLI rather than treating this launch API as a delivery receipt.
+- [Launch binding](https://github.com/stablyai/orca/blob/v1.4.250/src/main/plugins/workers/plugin-host-workspace-method-bindings.ts), [terminal binding](https://github.com/stablyai/orca/blob/v1.4.250/src/main/plugins/workers/plugin-host-method-bindings.ts), [initial prompt handling](https://github.com/stablyai/orca/blob/v1.4.250/src/main/runtime/rpc/methods/agent-launch-terminal-prompt.ts), and [events](https://github.com/stablyai/orca/blob/v1.4.250/src/shared/plugins/events/plugin-events.ts).
+- [1.4.252 terminal prompt submission](https://github.com/stablyai/orca/blob/v1.4.252/src/main/runtime/terminal/input/terminal-agent-prompt.ts) and [input admission](https://github.com/stablyai/orca/blob/v1.4.252/src/main/runtime/terminal/input/terminal-input-admission.ts); installed native CLI/help and submission source inspection are recorded in [workflow](workflow.md).
 
-## Технические вопросы до реализации
+## Claim, documents, and report trust
 
-- Поддерживаемый транспорт bd для remote без парсинга терминального экрана и без подмены удалённой базы локальным каталогом.
-- Путь безопасной отправки существующему агенту и наблюдаемое подтверждение доставки.
-- Связь идентичности Claim с конкретным исполнителем, включая повторное использование и потерю сессии.
-- Способ передачи большого контекста и получения структурированного результата без утечки всей личной истории.
+Dispatch does not reserve, Claim, or close tasks. Each handoff declares a distinct `beads-orca-<UUID>` actor and instructs the executor to Claim in the **source** directory before ready work, preserve other owners, and stop when no independent work remains. This is a declared string, not authenticated identity or enforcement. The panel's manual Claim still uses the CLI process actor. A native atomic Claim is not an atomic readiness check of the entire dependency graph; expiry of a lease is not evidence that an agent stopped. The [core routing race](../src/core/README.md) also remains: exact-ID precheck and mutation are separate native processes.
 
-Нельзя ослаблять утверждённые требования до возможностей простого `terminal.sendText` без отдельного решения владельца.
+- [Native Claim](https://github.com/gastownhall/beads/blob/v1.3.2/internal/storage/issueops/claim.go), [actor comparison](https://github.com/gastownhall/beads/blob/v1.3.2/internal/storage/issueops/identity.go), [lease behavior](https://github.com/gastownhall/beads/blob/v1.3.2/internal/storage/issueops/lease.go).
+
+Linked/manual Markdown is confined to the chosen workspace; no home/repository scan or execution of document commands occurs. Descriptor-anchored file operations reject traversal and symlinks. Text reads/writes are capped at **2 MiB**, while serialized library responses are capped at **768 KiB**, so a file below the disk limit can still be too large to preview. Native editor open checks metadata without reading text and has no such text-size cap. **`editor.open` is path-only: a malicious replacement between inspection and native open remains a TOCTOU race**, not a sandbox guarantee.
+
+Long prompts above 3,500 JS code units use explicit `.beads-orca/handoffs/<UUID>/context.md` on the target; the executor writes `report.json` beside it. Reports validate identity and every selected task exactly once. Outcome/check text is an executor's report, not independently verified execution. `comparisonBase: null` means attribution is unknown. Human review owns integration and closing; publication sends concise selected-task comments, not full private context. Cleanup is explicit and limited to those artifact files, never branches/worktrees or code changes.
+
+Imported history is permanently unverified and inert: no dispatch, report-file read, reported-file navigation, Beads publication, or cleanup from imported records. Its contents can include complete task/document context; review exports before sharing. History deletion does not delete artifacts or undo agent work.
+
+## Storage and RPC limits
+
+Native storage allows **256 KiB per value / 5 MiB total**, shared by history, snapshot caches, and personal filters. History chunks immutable context, reserves receipt space before effects, and rejects capacity failures without eviction or truncation. Serialized handoff context is bounded to 512 KiB; mutable receipt/report metadata to 240 KiB. Explicit project-filter publication writes `.beads-orca/filters.json` with portable names, no commit/push; disclosure checks are not a secret scanner.
+
+The [native panel bridge](https://github.com/stablyai/orca/blob/v1.4.250/src/shared/plugins/workers/plugin-panel-bridge-protocol.ts) permits 64 KiB input, 1 MiB response, and 256 KiB unsolicited posts. Default request deadline is 30 seconds, maximum 120 seconds. History uses paged export and chunked import; oversized requests/replies fail rather than silently truncate. A timeout is not proof of non-delivery. Detailed sizes and paging contracts are in [workflow](workflow.md).
+
+## Worktrees and remaining acceptance
+
+Native `worktree create` is previewed and explicit, uses `--no-parent --setup skip`, and requests no agent. Native default tabs may still open; returned identity/branch is authoritative if Orca suffixes a name. No database copy, automatic worktree removal, merge, rebase, or push occurs. Real isolated worktree preview/create was observed; this is not an observed model launch.
+
+Linux typecheck/build, 65 tests, real-`bd` smoke, package/resource checks and the UI detector passed. Real isolated SSH/offline, native-panel and worktree observations are recorded separately in verification. Native macOS, real paired runtime, actual model execution, and a new public Git installation remain unverified. The configured macOS CI matrix is not yet a successful run in this task. These limitations do not waive approved remote scope or the native idle-only acceptance gate.
+
+A later isolated smoke intercepted only `agent launch` in a test-only plugin copy with a synthetic `journaled` receipt. It exercised real context/report file operations, native editor navigation, one real concise Beads comment, and confined cleanup; it launched no agent/model/terminal. See [the explicitly labeled adapter evidence](verification.md#test-only-launch-adapter-smoke-not-native-agent-dispatch), not a native delivery claim.
+
+Historical alternatives and upstream context:
+
+- [Host API](https://github.com/stablyai/orca/blob/v1.4.250/docs/reference/plugin-host-api.md) has no general remote file/exec API. [Remote-worker request](https://github.com/stablyai/orca/issues/37788) and [paired workspace-list report](https://github.com/stablyai/orca/issues/30852) are upstream reports, not reproduced defects here.
+- [`bd serve`](https://github.com/gastownhall/beads/blob/9b65b9e198acbcc98e7fd3a87a5d55baa065a572/cmd/bd/serve.go) and its [HTTP API](https://github.com/gastownhall/beads/blob/9b65b9e198acbcc98e7fd3a87a5d55baa065a572/internal/httpapi/spec/openapi.v0.yaml) were not selected: embedded Dolt restrictions and HTTP hook/auto-commit differences prevent treating them as a transparent native-CLI replacement.

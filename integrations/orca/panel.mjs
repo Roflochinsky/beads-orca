@@ -2,9 +2,12 @@ import { mount } from '../../src/ui/index.ts';
 
 const transport = {
   async request(request) {
-    const plugin = window.orca?.plugin;
-    if (!plugin) throw new Error('Open the Beads panel in Orca to connect to the plugin.');
-    return await plugin.request('beads', request);
+    const host = window.orca?.host;
+    if (!host) throw new Error('Open the Beads panel in Orca to connect to the plugin.');
+    const { output } = await host.call('plugin.request', {
+      name: 'beads', input: request, timeoutMs: 120_000,
+    });
+    return output;
   },
 };
 

@@ -3,8 +3,8 @@
   "manifestVersion": 2,
   "id": "beads",
   "name": "Beads Board",
-  "version": "0.1.2",
-  "description": "Live Beads board, dependencies and issue actions backed by your local bd CLI.",
+  "version": "0.2.0",
+  "description": "Beads board, handoff previews, documents and personal history for local and explicitly mapped SSH workspaces.",
   "author": { "name": "Roflochinsky" },
   "repository": "https://github.com/Roflochinsky/beads-orca",
   "license": "MIT",
@@ -27,10 +27,15 @@
       "path": "docs/images/detail.png",
       "alt": "A blocked issue's details, dependencies and comment form beside the board.",
       "caption": "Issue details"
+    },
+    {
+      "path": "docs/images/native-handoff-unreleased.png",
+      "alt": "A native Orca handoff preview selecting an OMP CLI session and a separate target worktree.",
+      "caption": "Unreleased handoff preview with synthetic tasks"
     }
   ],
   "engines": {
-    "orca": ">=1.4.248"
+    "orca": ">=1.4.250"
   },
   "execution": "trusted-worker",
   "pluginApi": 1,
@@ -49,10 +54,18 @@
       {
         "key": "projectPaths",
         "title": "Additional local Beads project paths",
-        "description": "One absolute directory per line. Local Orca workspaces are included automatically; remote workspaces require running the plugin on their host.",
+        "description": "One absolute directory per line. Orca workspaces are included automatically. Remote hosts use an explicitly configured SSH destination.",
         "type": "string",
         "multiline": true,
         "default": ""
+      },
+      {
+        "key": "remoteHosts",
+        "title": "Remote Beads SSH connections",
+        "description": "JSON mapping Orca host IDs to {destination, configFile?, name?}. destination is a system SSH alias; configFile is an optional absolute SSH config path; name is a portable display label for shared filters. Never store credentials here.",
+        "type": "string",
+        "multiline": true,
+        "default": "{}"
       }
     ],
     "statusBarItems": [
@@ -61,6 +74,12 @@
   },
   "capabilities": [
     { "kind": "workspace:read" },
-    { "kind": "settings:own" }
+    { "kind": "settings:own" },
+    { "kind": "storage:own" },
+    { "kind": "workspace:write" },
+    { "kind": "agent:read" },
+    { "kind": "agent:launch" },
+    { "kind": "terminal:send" },
+    { "kind": "terminal:read" }
   ]
 }

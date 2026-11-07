@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { appendFile, mkdtemp, mkdir, rm } from 'node:fs/promises';
+import { appendFile, mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import activate from '../dist/orca/worker.mjs';
@@ -13,11 +13,17 @@ for (const key of Object.keys(process.env)) if (/^(BEADS_|BD_|DOLT_|GIT_DIR$|GIT
 Object.assign(process.env, { HOME: join(root, 'home'), XDG_CONFIG_HOME: join(root, 'home', '.config'), BEADS_ACTOR: 'beads-board-smoke', BD_NON_INTERACTIVE: '1', CI: 'true' });
 const projects = [{ id: 'smoke', name: 'Smoke workspace', path: projectPath }];
 let request;
+const storage = new Map();
 activate({
   host: {
-    async call(method) {
+    async call(method, params) {
       if (method === 'workspace.list') return { workspaces: projects.map((project) => ({ ...project, hostId: 'local' })), truncated: false };
       if (method === 'statusBar.update') return;
+      if (method === 'workspace.readContext') return { displayName: 'Smoke workspace', branch: '', terminals: [] };
+      if (method === 'storage.get') return { value: storage.get(params.key) ?? null };
+      if (method === 'storage.set') { storage.set(params.key, structuredClone(params.value)); return { ok: true }; }
+      if (method === 'storage.delete') { storage.delete(params.key); return { ok: true }; }
+      if (method === 'storage.keys') return { keys: [...storage.keys()] };
       throw new Error(`Unexpected Orca host call: ${method}`);
     },
   },
@@ -73,6 +79,33 @@ try {
   const comments = await call('comments', { id: dependent.id });
   assert.match(JSON.stringify(comments), /Verified through real bd/);
   await assert.rejects(() => request({ method: 'snapshot', project: 'not-registered' }));
+  await mkdir(join(projectPath, 'docs'));
+  const documentText = '# Acceptance\n\nVerify the visible result before closing the issue.\n';
+  await writeFile(join(projectPath, 'docs/acceptance.md'), documentText);
+  await call('update', { id: dependent.id, description: 'Read [acceptance](docs/acceptance.md).' });
+  const documents = await call('documents.list', { id: dependent.id });
+  assert.ok(documents.some((document) => document.path === 'docs/acceptance.md'));
+  assert.equal((await call('documents.read', { path: 'docs/acceptance.md' })).text, documentText);
+  await assert.rejects(() => call('documents.read', { path: '../outside.md' }));
+  await writeFile(join(root, 'outside.md'), 'Outside the registered workspace.');
+  await symlink(join(root, 'outside.md'), join(projectPath, 'docs/outside.md'));
+  await assert.rejects(() => call('documents.read', { path: 'docs/outside.md' }));
+  const filter = {
+    id: 'ready-work', name: 'Ready work',
+    criteria: {
+      query: '', view: 'ready', layout: 'table', typeFilter: '', priorityFilter: '', assigneeFilter: '',
+      showClosed: false, sortKey: 'priority', sortDirection: 'ascending',
+      projectNames: ['Smoke workspace'], hostNames: [],
+    },
+  };
+  await call('filters.save', { scope: 'personal', filter });
+  assert.deepEqual((await call('filters.list')).personal.find((item) => item.id === filter.id), filter);
+  await call('filters.publish', { filter });
+  assert.deepEqual((await call('filters.list')).project.find((item) => item.id === filter.id), filter);
+  await call('filters.delete', { scope: 'personal', id: filter.id });
+  assert.equal((await call('filters.list')).personal.some((item) => item.id === filter.id), false);
+  assert.equal((await call('filters.list')).project.some((item) => item.id === filter.id), true);
+  console.log('PASS: linked Markdown, real document contents, traversal/symlink rejection, personal filters and explicit independent project publication.');
   console.log('PASS: directory-default suppression, singleton external edges, create, dependencies before/after close, ready/blocked transitions, claim, reopen, unlink, update, comments and registered-project selection.');
   if (process.argv.includes('--keep')) console.log(`Fixture retained: ${projectPath}`);
 } finally {

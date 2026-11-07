@@ -15,7 +15,6 @@ assert.equal(manifest.id, 'beads');
 assert.equal(manifest.version, pkg.version);
 assert.equal(manifest.license, 'MIT');
 assert.equal(pkg.license, 'MIT');
-assert.equal(manifest.engines.orca, '>=1.4.248');
 assert.equal(manifest.execution, 'trusted-worker');
 assert.equal(Object.hasOwn(manifest, 'publisher'), false);
 

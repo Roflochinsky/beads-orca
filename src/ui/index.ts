@@ -1,5 +1,6 @@
 import type { Issue, Project, Snapshot, Transport } from '../shared.js';
 import { icon } from './icons.js';
+import { createProductUI } from './product.js';
 
 type Group = 'ready' | 'active' | 'blocked' | 'closed' | 'deferred' | 'other';
 type Draft = { title: string; description: string; type: string; priority: string; assignee: string; labels: string };
@@ -90,6 +91,7 @@ export function mount(root: HTMLElement, transport: Transport): void {
   let snapshot: Snapshot | null = null;
   let loadingProjects = true;
   let loadingSnapshot = false;
+  let connectionLost = false;
   let loadError = '';
   let actionError = '';
   let pending = false;
@@ -107,6 +109,7 @@ export function mount(root: HTMLElement, transport: Transport): void {
   let priorityFilter = '';
   let assigneeFilter = '';
   let showClosed = true;
+  let scope: { projectNames: string[]; hostNames: string[] } | null = null;
   let createOpen = false;
   let draft = emptyDraft();
   let dependencyId = '';
@@ -117,6 +120,7 @@ export function mount(root: HTMLElement, transport: Transport): void {
   let hoverId = '';
   let focusId = '';
   let drag: { id: string; project: string } | null = null;
+  const taskPool = new Map<string, { project: string; id: string; title: string }>();
   const editDrafts = new Map<string, EditDraft>();
   const commentDrafts = new Map<string, string>();
   let comments: Comment[] = [];
@@ -127,6 +131,44 @@ export function mount(root: HTMLElement, transport: Transport): void {
   let projectLoadTask: Promise<void> | null = null;
   let snapshotGeneration = 0;
   let projectsReloadPending = false;
+  function portableHostName(project: Project): string {
+    if (!project.hostId || project.hostId === 'local') return project.hostName || 'Local';
+    return project.hostName && project.hostName !== project.hostId ? project.hostName : '';
+  }
+  function inScope(project: Project, criteria: { projectNames: string[]; hostNames: string[] } | null): boolean {
+    return !criteria || ((!criteria.projectNames.length || criteria.projectNames.includes(project.name))
+      && (!criteria.hostNames.length || criteria.hostNames.includes(portableHostName(project))));
+  }
+  const product = createProductUI({
+    root, transport,
+    projects: () => projects,
+    projectId: () => projectId,
+    issueId: () => selectedId,
+    currentUnavailable: () => connectionLost || !snapshot || !!snapshot.offline || snapshot.project.availability === 'offline' || snapshot.project.availability === 'unsupported',
+    snapshot: () => snapshot,
+    pool: () => [...taskPool.values()],
+    addTask: (item) => { taskPool.set(`${item.project}\0${item.id}`, item); },
+    removeTask: (project, id) => { taskPool.delete(`${project}\0${id}`); },
+    criteria: () => {
+      const project = projects.find((item) => item.id === projectId);
+      return { query, view, layout, typeFilter, priorityFilter, assigneeFilter, showClosed, sortKey, sortDirection,
+        projectNames: scope ? [...scope.projectNames] : project ? [project.name] : [],
+        hostNames: scope ? [...scope.hostNames] : project && portableHostName(project) ? [portableHostName(project)] : [] };
+    },
+    applyCriteria: (criteria) => {
+      const match = projects.find((project) => project.id === projectId && inScope(project, criteria))
+        || projects.find((project) => inScope(project, criteria));
+      if ((criteria.projectNames.length || criteria.hostNames.length) && !match) { actionError = 'No available project matches this filter scope.'; return; }
+      scope = { projectNames: [...criteria.projectNames], hostNames: [...criteria.hostNames] };
+      query = criteria.query; view = criteria.view; layout = criteria.layout; typeFilter = criteria.typeFilter;
+      priorityFilter = criteria.priorityFilter; assigneeFilter = criteria.assigneeFilter; showClosed = criteria.showClosed;
+      sortKey = criteria.sortKey; sortDirection = criteria.sortDirection;
+      if (match && match.id !== projectId) selectProject(match.id, false); else render();
+    },
+    selectProject: (id) => selectProject(id, false),
+    reloadProjects: () => { void loadProjects(); },
+    render,
+  });
 
   const groupOf = (issue: Issue): Group => {
     if (issue.status === 'closed') return 'closed';
@@ -154,9 +196,12 @@ export function mount(root: HTMLElement, transport: Transport): void {
   const count = (group: Group): number => allIssues().filter((issue) => groupOf(issue) === group).length;
   const currentIssue = (): Issue | undefined => detail?.id === selectedId ? detail : byId(selectedId);
   const disabled = (): string => pending ? ' disabled' : '';
+  const offline = (): boolean => connectionLost || !snapshot || !!snapshot.offline || snapshot.project.availability === 'offline' || snapshot.project.availability === 'unsupported';
 
   function projectSelect(): string {
-    return `<label class="project-select"><span class="visually-hidden">Project</span><select data-change="project" data-focus="project" aria-label="Project"${disabled()}${projects.length ? '' : ' disabled'}>${projects.length ? projects.map((project) => `<option value="${escapeHtml(project.id)}"${selected(projectId, project.id)}>${escapeHtml(project.name)}</option>`).join('') : '<option>No projects</option>'}</select>${icon('arrow_drop_down')}</label>`;
+    const hosts = [...new Set(projects.map((project) => project.hostName || project.hostId || 'local'))];
+    const options = hosts.map((host) => `<optgroup label="${escapeHtml(host)}">${projects.filter((project) => (project.hostName || project.hostId || 'local') === host).map((project) => `<option value="${escapeHtml(project.id)}"${selected(projectId, project.id)}${inScope(project, scope) ? '' : ' disabled'}>${escapeHtml(project.name)} · ${escapeHtml(project.availability || 'unknown')}</option>`).join('')}</optgroup>`).join('');
+    return `<label class="project-select"><span class="visually-hidden">Project</span><select data-change="project" data-focus="project" aria-label="Project"${disabled()}${projects.length ? '' : ' disabled'}>${options || '<option>No projects</option>'}</select>${icon('arrow_drop_down')}</label>`;
   }
 
   function searchField(): string {
@@ -167,7 +212,9 @@ export function mount(root: HTMLElement, transport: Transport): void {
     const parts = [loadError, actionError].filter(Boolean);
     const error = parts.length ? `<div class="banner" role="alert">${icon('error')}<div><strong>Could not complete the request</strong>${parts.map((part) => `<p>${escapeHtml(part)}</p>`).join('')}</div><button class="btn btn--outlined btn--sm" data-action="retry" type="button"${disabled()}>Retry loading</button><button class="btn btn--icon" data-action="dismiss-error" type="button" aria-label="Dismiss error">${icon('close')}</button></div>` : '';
     const undo = undoClose && undoClose.project === projectId ? `<div class="banner banner--undo" role="status"><div><strong>Closed ${escapeHtml(undoClose.id)}</strong><p>Undo reopens this issue if it has not changed.</p></div><button class="btn btn--outlined btn--sm" type="button" data-action="undo-close" title="${escapeHtml(actionCommand('reopen', undoClose.id))}"${disabled()}>Undo</button><button class="btn btn--icon" type="button" data-action="dismiss-undo" aria-label="Dismiss close message">${icon('close')}</button></div>` : '';
-    return error + undo;
+    const offlineNotice = snapshot && offline() ? `<div class="banner" role="status"><div><strong>Offline · read-only snapshot</strong><p>Last fetched ${escapeHtml(snapshot.fetchedAt)}. Reconnect and refresh to change issues or send work.</p></div></div>` : '';
+    const cacheNotice = snapshot?.project.cacheError && !offline() ? `<div class="banner" role="status"><div><strong>Offline cache unavailable</strong><p>${escapeHtml(snapshot.project.cacheError)} The current snapshot is live but may not be available offline.</p></div></div>` : '';
+    return offlineNotice + cacheNotice + error + undo;
   }
 
   function createButton(): string {
@@ -177,15 +224,15 @@ export function mount(root: HTMLElement, transport: Transport): void {
   function card(issue: Issue): string {
     const group = groupOf(issue);
     const dependencyBlocked = snapshot?.blockedIds.includes(issue.id);
-    return `<button type="button" class="issue-card${selectedId === issue.id ? ' issue-card--selected' : ''}${group === 'closed' ? ' issue-card--closed' : ''}" draggable="${pressed(!pending)}" data-action="select" data-id="${escapeHtml(issue.id)}" aria-label="Open ${escapeHtml(issue.id)}: ${escapeHtml(issue.title)}" title="Drag to move, or open for keyboard-accessible actions">
-      <span class="issue-card__top">${icon(typeIcons[issue.type] ?? 'task_alt')}<span class="mono">${escapeHtml(issue.id)}</span>${priority(issue)}</span>
+    return `<article class="issue-card${selectedId === issue.id ? ' issue-card--selected' : ''}${group === 'closed' ? ' issue-card--closed' : ''}" draggable="${pressed(!pending && !offline())}" data-action="select" data-id="${escapeHtml(issue.id)}" title="Drag to move, or open for keyboard-accessible actions">
+      <span class="issue-card__top"><input type="checkbox" data-change="pool" data-id="${escapeHtml(issue.id)}" aria-label="Select ${escapeHtml(issue.id)} for handoff"${taskPool.has(`${projectId}\0${issue.id}`) ? ' checked' : ''}>${icon(typeIcons[issue.type] ?? 'task_alt')}<span class="mono">${escapeHtml(issue.id)}</span>${priority(issue)}</span>
       <span class="issue-card__relation" hidden></span>
-      <span class="issue-card__title">${escapeHtml(issue.title)}</span>
+      <button type="button" class="text-link issue-card__title" data-action="select" data-id="${escapeHtml(issue.id)}" aria-label="Open ${escapeHtml(issue.id)}: ${escapeHtml(issue.title)}">${escapeHtml(issue.title)}</button>
       ${dependencyBlocked ? `<span class="issue-card__blockers">${icon('lock')}<span>Blocked by dependencies</span></span>` : ''}
       ${issue.dependencies.length ? `<span class="issue-card__footer">Relationships: ${escapeHtml(relationships(issue))}</span>` : ''}
       <span class="issue-card__footer"><span>${escapeHtml(issue.type)}</span>${issue.assignee ? `<span>${escapeHtml(issue.assignee)}</span>` : '<span>Unassigned</span>'}</span>
       ${issue.labels.length ? `<span class="issue-card__labels">${issue.labels.map((label) => `<span class="chip chip--label">${escapeHtml(label)}</span>`).join('')}</span>` : ''}
-    </button>`;
+    </article>`;
   }
 
   function tableContent(issues: Issue[]): string {
@@ -213,7 +260,7 @@ export function mount(root: HTMLElement, transport: Transport): void {
       const order = typeof left === 'number' && typeof right === 'number' ? left - right : String(left).localeCompare(String(right));
       return (sortDirection === 'ascending' ? order : -order) || a.priority - b.priority || a.id.localeCompare(b.id);
     });
-    return `<div class="table-wrap"><table class="issue-table"><thead><tr>${headers.map(([key, label]) => `<th scope="col" aria-sort="${key === sortKey ? sortDirection : 'none'}"><button class="table-sort" type="button" data-action="sort" data-value="${key}">${label}${key === sortKey ? `<span class="table-sort__arrow${sortDirection === 'ascending' ? ' table-sort__arrow--up' : ''}">${icon('arrow_drop_down')}</span>` : ''}</button></th>`).join('')}</tr></thead><tbody>${sorted.map((issue) => `<tr class="issue-table__row" data-id="${escapeHtml(issue.id)}" data-selected="${pressed(issue.id === selectedId)}"><td>${bead(groupOf(issue))} ${escapeHtml(groupNames[groupOf(issue)])}</td><td class="mono">${escapeHtml(issue.id)}</td><td><button class="table-link" type="button" data-action="select" data-id="${escapeHtml(issue.id)}">${escapeHtml(issue.title)}</button><span class="issue-table__relation" hidden></span></td><td>${priority(issue)}</td><td class="mono">${escapeHtml(relationships(issue) || '—')}</td><td>${escapeHtml(issue.assignee || 'Unassigned')}</td><td>${escapeHtml(issue.type)}</td><td>${escapeHtml(epic(issue)?.title || '—')}</td><td>${issue.labels.map((label) => `<span class="chip chip--label">${escapeHtml(label)}</span>`).join(' ') || '—'}</td><td>${escapeHtml(relativeTime(issue.updatedAt))}</td></tr>`).join('')}</tbody></table></div>`;
+    return `<div class="table-wrap"><table class="issue-table"><thead><tr><th scope="col"><span class="visually-hidden">Select for handoff</span></th>${headers.map(([key, label]) => `<th scope="col" aria-sort="${key === sortKey ? sortDirection : 'none'}"><button class="table-sort" type="button" data-action="sort" data-value="${key}">${label}${key === sortKey ? `<span class="table-sort__arrow${sortDirection === 'ascending' ? ' table-sort__arrow--up' : ''}">${icon('arrow_drop_down')}</span>` : ''}</button></th>`).join('')}</tr></thead><tbody>${sorted.map((issue) => `<tr class="issue-table__row" data-id="${escapeHtml(issue.id)}" data-selected="${pressed(issue.id === selectedId)}"><td><input type="checkbox" data-change="pool" data-id="${escapeHtml(issue.id)}" aria-label="Select ${escapeHtml(issue.id)} for handoff"${taskPool.has(`${projectId}\0${issue.id}`) ? ' checked' : ''}></td><td>${bead(groupOf(issue))} ${escapeHtml(groupNames[groupOf(issue)])}</td><td class="mono">${escapeHtml(issue.id)}</td><td><button class="table-link" type="button" data-action="select" data-id="${escapeHtml(issue.id)}">${escapeHtml(issue.title)}</button><span class="issue-table__relation" hidden></span></td><td>${priority(issue)}</td><td class="mono">${escapeHtml(relationships(issue) || '—')}</td><td>${escapeHtml(issue.assignee || 'Unassigned')}</td><td>${escapeHtml(issue.type)}</td><td>${escapeHtml(epic(issue)?.title || '—')}</td><td>${issue.labels.map((label) => `<span class="chip chip--label">${escapeHtml(label)}</span>`).join(' ') || '—'}</td><td>${escapeHtml(relativeTime(issue.updatedAt))}</td></tr>`).join('')}</tbody></table></div>`;
   }
 
   function applySpotlight(): void {
@@ -256,7 +303,7 @@ export function mount(root: HTMLElement, transport: Transport): void {
   function filters(): string {
     const issueTypes = [...new Set(allIssues().map((issue) => issue.type))].sort();
     const assignees = [...new Set(allIssues().map((issue) => issue.assignee).filter(Boolean))].sort();
-    return `<div class="filter-bar" aria-label="Filters"><label><span class="visually-hidden">Type</span><select data-change="type" data-focus="type" aria-label="Filter by type"><option value="">All types</option>${issueTypes.map((type) => `<option value="${escapeHtml(type)}"${selected(typeFilter, type)}>${escapeHtml(type)}</option>`).join('')}</select></label><label><span class="visually-hidden">Priority</span><select data-change="priority" data-focus="priority" aria-label="Filter by priority"><option value="">All priorities</option>${[0, 1, 2, 3, 4].map((value) => `<option value="${value}"${selected(priorityFilter, String(value))}>P${value}</option>`).join('')}</select></label><label><span class="visually-hidden">Assignee</span><select data-change="assignee" data-focus="assignee" aria-label="Filter by assignee"><option value="">All assignees</option>${assignees.map((assignee) => `<option value="${escapeHtml(assignee)}"${selected(assigneeFilter, assignee)}>${escapeHtml(assignee)}</option>`).join('')}</select></label><button class="btn btn--text btn--sm" type="button" data-action="clear-filters">Clear filters</button><span class="filter-bar__spacer"></span><span class="muted">${filtered().length} issues</span><label class="check"><input type="checkbox" data-change="closed"${showClosed ? ' checked' : ''}> Closed</label></div>`;
+    return `<div class="filter-bar" aria-label="Filters"><label><span class="visually-hidden">Type</span><select data-change="type" data-focus="type" aria-label="Filter by type"><option value="">All types</option>${issueTypes.map((type) => `<option value="${escapeHtml(type)}"${selected(typeFilter, type)}>${escapeHtml(type)}</option>`).join('')}</select></label><label><span class="visually-hidden">Priority</span><select data-change="priority" data-focus="priority" aria-label="Filter by priority"><option value="">All priorities</option>${[0, 1, 2, 3, 4].map((value) => `<option value="${value}"${selected(priorityFilter, String(value))}>P${value}</option>`).join('')}</select></label><label><span class="visually-hidden">Assignee</span><select data-change="assignee" data-focus="assignee" aria-label="Filter by assignee"><option value="">All assignees</option>${assignees.map((assignee) => `<option value="${escapeHtml(assignee)}"${selected(assigneeFilter, assignee)}>${escapeHtml(assignee)}</option>`).join('')}</select></label><button class="btn btn--text btn--sm" type="button" data-action="clear-filters">Clear filters</button><span class="filter-bar__spacer"></span><span class="muted">${filtered().length} issues · ${taskPool.size} selected</span>${taskPool.size ? '<button class="btn btn--text btn--sm" type="button" data-action="clear-pool">Clear selection</button>' : ''}<label class="check"><input type="checkbox" data-change="closed"${showClosed ? ' checked' : ''}> Closed</label></div>`;
   }
 
   function rail(): string {
@@ -319,6 +366,7 @@ export function mount(root: HTMLElement, transport: Transport): void {
       ${issue.acceptance ? `<section class="detail__section"><h3>Acceptance criteria</h3><p class="detail__prose">${escapeHtml(issue.acceptance)}</p></section>` : ''}
       ${issue.notes ? `<section class="detail__section"><h3>Notes</h3><p class="detail__prose">${escapeHtml(issue.notes)}</p></section>` : ''}
       ${issue.design ? `<section class="detail__section"><h3>Design</h3><p class="detail__prose">${escapeHtml(issue.design)}</p></section>` : ''}
+      ${product.documents(issue)}
       <section class="detail__section"><h3>Dependencies</h3>${deps.length ? `<ul class="thread">${deps.map((dep) => `<li><span class="thread__node">${bead(byId(dep.id) ? groupOf(byId(dep.id) as Issue) : 'other')}</span><span><button type="button" class="text-link" data-action="select" data-id="${escapeHtml(dep.id)}"${byId(dep.id) ? '' : ' disabled'}>${escapeHtml(byId(dep.id)?.title || dep.id)}</button><span class="thread__meta mono">${escapeHtml(dep.id)} · ${escapeHtml(dep.type)}</span></span><button type="button" class="btn btn--icon" data-action="unlink" data-id="${escapeHtml(issue.id)}" data-depends="${escapeHtml(dep.id)}" aria-label="Remove dependency ${escapeHtml(dep.id)}" title="${escapeHtml(actionCommand('unlink', issue.id, dep.id))}"${disabled()}>${icon('close')}</button></li>`).join('')}</ul>` : '<p class="muted">No dependencies.</p>'}
       ${dependents.length ? `<p class="muted">Referenced by</p><ul class="thread">${dependents.map((other) => `<li><span class="thread__node">${bead(groupOf(other))}</span><button type="button" class="text-link" data-action="select" data-id="${escapeHtml(other.id)}">${escapeHtml(other.title)} <span class="mono">${escapeHtml(other.id)}</span></button></li>`).join('')}</ul>` : ''}
       ${candidates.length ? `<form class="dependency-form" data-form="link"><label>Link issue<select name="dependsOn" data-input="dependency" aria-label="Dependency issue"${disabled()}><option value="">Choose an issue</option>${candidates.map((candidate) => `<option value="${escapeHtml(candidate.id)}"${selected(dependencyId, candidate.id)}>${escapeHtml(candidate.id)} · ${escapeHtml(candidate.title)}</option>`).join('')}</select></label><label>Relationship<select name="type" data-input="dependency-type" aria-label="Dependency relationship"${disabled()}>${['blocks', 'parent-child', 'related', 'discovered-from'].map((type) => `<option value="${type}"${selected(dependencyType, type)}>${type}</option>`).join('')}</select></label><button class="btn btn--outlined" type="submit" data-link-submit${pending || !dependencyId ? ' disabled' : ''}>${icon('add_link')}Link</button><code class="command dependency-form__command" data-command="link">${escapeHtml(actionCommand('link', issue.id, dependencyId || 'ISSUE', dependencyType))}</code></form>` : ''}</section>
@@ -333,13 +381,14 @@ export function mount(root: HTMLElement, transport: Transport): void {
 
   function boardShell(): string {
     const issue = currentIssue();
-    const sync = snapshot ? `Synced ${relativeTime(snapshot.fetchedAt) || 'recently'}` : 'Refresh';
+    const project = projects.find((item) => item.id === projectId);
+    const sync = snapshot ? `${offline() ? 'Offline · last fetched' : 'Synced'} ${relativeTime(snapshot.fetchedAt) || snapshot.fetchedAt}` : 'Refresh';
     return `<div class="app${issue ? ' app--drawer-open' : ''}">
       <header class="app-bar"><div class="brand"><span class="brand__mark">${bead('closed')}${bead('active')}${bead('ready')}</span><span>beads</span></div><div class="app-bar__search">${searchField()}</div><div class="app-bar__actions"><button type="button" class="btn btn--text btn--sm" data-action="refresh"${disabled()}>${icon('sync')}<span>${escapeHtml(sync)}</span></button>${createButton()}</div></header>
       ${rail()}<main class="main"><div class="main__head"><div class="main__title-row"><h1>Board</h1><span class="muted">${count('ready')} ready · ${count('active')} in progress · ${count('blocked')} blocked</span>
       <div class="segmented" aria-label="Layout"><button type="button" data-action="layout" data-value="board" aria-pressed="${pressed(layout === 'board')}">${icon('view_kanban')}Board</button><button type="button" data-action="layout" data-value="table" aria-pressed="${pressed(layout === 'table')}">${icon('table_rows')}Table</button></div>
-      <button type="button" class="btn btn--icon" data-action="spotlight" aria-label="Highlight dependencies" aria-pressed="${pressed(spotlightOn)}" title="Highlight dependencies on hover or focus">${icon('account_tree')}</button></div>${filters()}${layout === 'board' ? '<p class="board__hint">Drag cards to claim, close or reopen. Reopened issues may still be blocked. Open a card for keyboard actions.</p>' : ''}</div>${errorBanner()}${bodyState() || boardContent()}</main>
-      ${issue ? `<aside class="drawer" aria-label="Issue details">${issueDetail(issue)}</aside>` : ''}</div>${createDialog()}`;
+      <button type="button" class="btn btn--icon" data-action="spotlight" aria-label="Highlight dependencies" aria-pressed="${pressed(spotlightOn)}" title="Highlight dependencies on hover or focus">${icon('account_tree')}</button></div>${project ? `<p class="muted">Current project: ${escapeHtml(project.name)} · ${escapeHtml(project.hostName || project.hostId || 'local')} · ${escapeHtml(offline() ? 'unavailable or offline' : project.availability || 'unknown')}. Counts and tasks show this project only.${scope ? ' The saved scope limits project choices; use Hosts to view the overview.' : ''}</p>` : ''}${filters()}<div class="filter-bar product-controls">${product.controls()}</div>${layout === 'board' ? '<p class="board__hint">Drag cards to claim, close or reopen. Reopened issues may still be blocked. Open a card for keyboard actions.</p>' : ''}</div>${errorBanner()}${bodyState() || boardContent()}</main>
+      ${issue ? `<aside class="drawer" aria-label="Issue details">${issueDetail(issue)}</aside>` : ''}</div>${createDialog()}${product.dialog()}`;
   }
 
   function bodyState(): string {
@@ -353,11 +402,14 @@ export function mount(root: HTMLElement, transport: Transport): void {
   function render(): void {
     if (disposed) return;
     const active = document.activeElement instanceof HTMLElement && root.contains(document.activeElement) ? document.activeElement : null;
-    const candidates = (container: HTMLElement): HTMLElement[] => Array.from(container.querySelectorAll<HTMLElement>('[data-focus], [data-input], [data-action], [data-change]'));
+    const candidates = (container: HTMLElement): HTMLElement[] => Array.from(container.querySelectorAll<HTMLElement>('[data-focus], [data-input], [data-action], [data-change], [data-product-action], [data-product-input], [data-product-change]'));
     const matches = (element: HTMLElement): boolean => !!active && element.tagName === active.tagName
       && element.dataset.focus === active.dataset.focus && element.dataset.input === active.dataset.input
       && element.dataset.action === active.dataset.action && element.dataset.change === active.dataset.change
       && element.dataset.id === active.dataset.id
+      && element.dataset.productAction === active.dataset.productAction && element.dataset.productInput === active.dataset.productInput
+      && element.dataset.productChange === active.dataset.productChange && element.dataset.group === active.dataset.group
+      && element.dataset.path === active.dataset.path && element.dataset.scope === active.dataset.scope
       && (!(element instanceof HTMLInputElement || element instanceof HTMLSelectElement || element instanceof HTMLTextAreaElement)
         || element.name === (active as HTMLInputElement).name);
     const focusIndex = active ? candidates(root).filter(matches).indexOf(active) : -1;
@@ -367,10 +419,15 @@ export function mount(root: HTMLElement, transport: Transport): void {
     const scrollPositions = Array.from(root.querySelectorAll<HTMLElement>(scrollSelector), (element) => [element.scrollTop, element.scrollLeft] as const);
     hoverId = '';
     root.innerHTML = boardShell();
+    if (offline()) {
+      const selectors = ['[data-action=\"new\"]', '[data-action=\"edit\"]', '[data-action=\"claim\"]', '[data-action=\"reclaim\"]', '[data-action=\"close\"]', '[data-action=\"reopen\"]', '[data-action=\"unlink\"]', '[data-action=\"undo-close\"]', '[data-form=\"create\"] input', '[data-form=\"create\"] select', '[data-form=\"create\"] textarea', '[data-form=\"create\"] button[type=\"submit\"]', '[data-form=\"update\"] input', '[data-form=\"update\"] select', '[data-form=\"update\"] textarea', '[data-form=\"update\"] button[type=\"submit\"]', '[data-form=\"comment\"] textarea', '[data-form=\"comment\"] button[type=\"submit\"]', '[data-form=\"link\"] select', '[data-form=\"link\"] button[type=\"submit\"]'];
+      for (const element of root.querySelectorAll<HTMLButtonElement | HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(selectors.join(', '))) element.disabled = true;
+      for (const element of root.querySelectorAll<HTMLButtonElement>('[data-action=\"retry-comments\"], [data-product-action=\"documents-retry\"]')) element.disabled = true;
+    }
     const dialog = root.querySelector<HTMLDialogElement>('dialog');
     if (dialog) {
-      dialog.addEventListener('cancel', (event) => { event.preventDefault(); if (!pending) { createOpen = false; render(); } });
-      dialog.showModal();
+      dialog.addEventListener('cancel', (event) => { event.preventDefault(); if (dialog.hasAttribute('data-product-dialog')) product.close(); else if (!pending) { createOpen = false; render(); } });
+      if (!document.querySelector('.product-confirm[open]')) dialog.showModal();
     }
     Array.from(root.querySelectorAll<HTMLElement>(scrollSelector)).forEach((element, index) => {
       const position = scrollPositions[index];
@@ -432,12 +489,19 @@ export function mount(root: HTMLElement, transport: Transport): void {
         const result = await transport.request<Snapshot>({ method: 'snapshot', project: requestedProject });
         if (disposed || projectId !== requestedProject) return;
         snapshot = result;
+        connectionLost = false;
+        projects = projects.map((project) => project.id === result.project.id ? { ...project, ...result.project } : project);
         snapshotGeneration++;
         loadError = '';
         if (selectedId && !result.issues.some((issue) => issue.id === selectedId)) {
           selectedId = ''; detail = null; detailSequence++;
+        } else if (selectedId && result.offline) {
+          detail = result.issues.find((issue) => issue.id === selectedId) || null;
+          detailSequence++; detailLoading = false; detailError = '';
+          commentsSequence++; comments = []; commentsLoading = false; commentsError = 'Comments are unavailable offline.';
         } else if (selectedId) {
           const id = selectedId;
+          void product.loadDocuments(requestedProject, id, result.issues.find((issue) => issue.id === id)?.updatedAt || '');
           const sequence = ++detailSequence;
           try {
             const latest = await transport.request<Issue>({ method: 'issue', project: requestedProject, input: { id } });
@@ -452,7 +516,7 @@ export function mount(root: HTMLElement, transport: Transport): void {
           if (!disposed && projectId === requestedProject && selectedId === id) await loadComments(id, true);
         }
       } catch (error) {
-        if (!disposed && projectId === requestedProject) loadError = textError(error);
+        if (!disposed && projectId === requestedProject) { connectionLost = true; loadError = textError(error); }
       } finally {
         if (!disposed && projectId === requestedProject) { loadingSnapshot = false; render(); }
       }
@@ -464,6 +528,7 @@ export function mount(root: HTMLElement, transport: Transport): void {
   async function loadComments(id: string, quiet = false): Promise<void> {
     const requestedProject = projectId;
     const sequence = ++commentsSequence;
+    if (offline()) { comments = []; commentsLoading = false; commentsError = 'Comments are unavailable offline.'; render(); return; }
     if (!quiet) { commentsLoading = true; commentsError = ''; render(); }
     try {
       const rows = await transport.request<unknown>({ method: 'comments', project: requestedProject, input: { id } });
@@ -492,8 +557,14 @@ export function mount(root: HTMLElement, transport: Transport): void {
     detailLoading = true;
     dependencyId = '';
     dependencyType = 'blocks';
+    if (offline()) {
+      detail = byId(id) || null; detailLoading = false; commentsSequence++;
+      comments = []; commentsLoading = false; commentsError = 'Comments are unavailable offline.';
+      render(); return;
+    }
     render();
     void loadComments(id);
+    void product.loadDocuments(requestedProject, id, byId(id)?.updatedAt || '');
     try {
       const result = await transport.request<Issue>({ method: 'issue', project: requestedProject, input: { id } });
       if (!disposed && projectId === requestedProject && selectedId === id && sequence === detailSequence) detail = result;
@@ -505,13 +576,14 @@ export function mount(root: HTMLElement, transport: Transport): void {
   }
 
   async function mutate(method: string, input: Record<string, unknown>): Promise<void> {
-    if (pending || !projectId) return;
+    if (pending || !projectId || offline()) return;
     pending = true;
     actionError = '';
     const requestedProject = projectId;
     render();
     try {
       if (refreshTask) await refreshTask;
+      if (offline()) throw new Error('The project is offline. No change was sent.');
       const before = snapshotGeneration;
       await transport.request({ method, project: requestedProject, input });
       if (disposed || projectId !== requestedProject) return;
@@ -537,12 +609,13 @@ export function mount(root: HTMLElement, transport: Transport): void {
 
   async function undoLastClose(): Promise<void> {
     const undo = undoClose;
-    if (!undo || pending || projectId !== undo.project) return;
+    if (!undo || pending || offline() || projectId !== undo.project) return;
     pending = true;
     actionError = '';
     render();
     try {
       if (refreshTask) await refreshTask;
+      if (offline()) throw new Error('The project is offline. The issue was not reopened.');
       const latest = await transport.request<Issue>({ method: 'issue', project: undo.project, input: { id: undo.id } });
       if (disposed || projectId !== undo.project) return;
       if (latest.status !== 'closed' || latest.updatedAt !== undo.updatedAt || latest.closedAt !== undo.closedAt) {
@@ -565,7 +638,7 @@ export function mount(root: HTMLElement, transport: Transport): void {
 
 
   function openCreate(): void {
-    if (!projectId || pending) return;
+    if (!projectId || pending || offline()) return;
     actionError = '';
     createOpen = true;
     render();
@@ -573,12 +646,24 @@ export function mount(root: HTMLElement, transport: Transport): void {
   }
 
   function clearFilters(): void {
-    query = ''; typeFilter = ''; priorityFilter = ''; assigneeFilter = ''; showClosed = true; view = 'all';
+    query = ''; typeFilter = ''; priorityFilter = ''; assigneeFilter = ''; showClosed = true; view = 'all'; scope = null;
     render();
   }
+  function selectProject(id: string, clearQuery: boolean): void {
+    const project = projects.find((item) => item.id === id);
+    if (!project || id === projectId) return;
+    if (!inScope(project, scope)) { actionError = 'This project is outside the saved filter scope. Clear filters to view it.'; render(); return; }
+    projectId = id; snapshot = null; connectionLost = false; selectedId = ''; detail = null; detailSequence++; commentsSequence++;
+    comments = []; commentsError = ''; commentsLoading = false; undoClose = null;
+    loadError = ''; actionError = ''; if (clearQuery && !scope) query = ''; render(); void refresh();
+  }
+
 
   function onClick(event: MouseEvent): void {
+    const productTarget = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-product-action]') : null;
+    if (productTarget && root.contains(productTarget)) { void product.onClick(productTarget); return; }
     const target = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-action]') : null;
+    if (event.target instanceof HTMLInputElement && event.target.dataset.change === 'pool') return;
     if (!target || !root.contains(target)) return;
     const action = target.dataset.action;
     const id = target.dataset.id || '';
@@ -612,6 +697,7 @@ export function mount(root: HTMLElement, transport: Transport): void {
       }
       case 'dismiss-error': loadError = ''; actionError = ''; render(); break;
       case 'clear-filters': clearFilters(); break;
+      case 'clear-pool': taskPool.clear(); render(); break;
       case 'layout': if (target.dataset.value === 'board' || target.dataset.value === 'table') { layout = target.dataset.value; render(); } break;
       case 'spotlight': spotlightOn = !spotlightOn; render(); break;
       case 'view': view = (target.dataset.value || 'all') as Group | 'all'; if (view === 'closed') showClosed = true; render(); break;
@@ -625,11 +711,18 @@ export function mount(root: HTMLElement, transport: Transport): void {
   function onChange(event: Event): void {
     const target = event.target;
     if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement)) return;
+    if (product.onChange(target)) return;
     const change = target.dataset.change;
-    if (change === 'project' && target.value !== projectId) {
-      projectId = target.value; snapshot = null; selectedId = ''; detail = null; detailSequence++; commentsSequence++;
-      comments = []; commentsError = ''; commentsLoading = false; undoClose = null;
-      loadError = ''; actionError = ''; query = ''; render(); void refresh();
+    if (change === 'pool' && target instanceof HTMLInputElement) {
+      const issue = byId(target.dataset.id || '');
+      if (issue) {
+        const key = `${projectId}\0${issue.id}`;
+        if (target.checked) taskPool.set(key, { project: projectId, id: issue.id, title: issue.title });
+        else taskPool.delete(key);
+        render();
+      }
+    } else if (change === 'project' && target.value !== projectId) {
+      selectProject(target.value, true);
     } else if (change === 'type') { typeFilter = target.value; render(); }
     else if (change === 'priority') { priorityFilter = target.value; render(); }
     else if (change === 'assignee') { assigneeFilter = target.value; render(); }
@@ -640,6 +733,7 @@ export function mount(root: HTMLElement, transport: Transport): void {
   function onInput(event: Event): void {
     const target = event.target;
     if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement)) return;
+    if (product.onInput(target)) return;
     if (target.dataset.input === 'search') {
       if (query === target.value) return;
       query = target.value;
@@ -657,7 +751,7 @@ export function mount(root: HTMLElement, transport: Transport): void {
       }
       const changes = changedFields(edit);
       for (const command of root.querySelectorAll<HTMLElement>('[data-command="update"]')) command.textContent = updateCommand(selectedId, changes);
-      for (const button of root.querySelectorAll<HTMLButtonElement>('[data-update-submit]')) button.disabled = pending || !Object.keys(changes).length || !edit.values.title.trim();
+      for (const button of root.querySelectorAll<HTMLButtonElement>('[data-update-submit]')) button.disabled = pending || offline() || !Object.keys(changes).length || !edit.values.title.trim();
     } else if (target.dataset.input === 'comment' && selectedId) {
       commentDrafts.set(draftKey(selectedId), target.value);
       for (const field of root.querySelectorAll<HTMLTextAreaElement>('[data-input="comment"]')) {
@@ -665,13 +759,13 @@ export function mount(root: HTMLElement, transport: Transport): void {
       }
       const commandText = `bd --json --no-color comment -- ${shell(selectedId)} ${shell(target.value.trim())}`;
       for (const command of root.querySelectorAll<HTMLElement>('[data-command="comment"]')) command.textContent = commandText;
-      for (const button of root.querySelectorAll<HTMLButtonElement>('[data-comment-submit]')) button.disabled = pending || !target.value.trim();
+      for (const button of root.querySelectorAll<HTMLButtonElement>('[data-comment-submit]')) button.disabled = pending || offline() || !target.value.trim();
     } else if (target.dataset.input === 'dependency' || target.dataset.input === 'dependency-type') {
       if (target.dataset.input === 'dependency') dependencyId = target.value; else dependencyType = target.value;
       for (const select of root.querySelectorAll<HTMLSelectElement>('[data-input="dependency"], [data-input="dependency-type"]')) {
         select.value = select.dataset.input === 'dependency' ? dependencyId : dependencyType;
       }
-      for (const button of root.querySelectorAll<HTMLButtonElement>('[data-link-submit]')) button.disabled = pending || !dependencyId;
+      for (const button of root.querySelectorAll<HTMLButtonElement>('[data-link-submit]')) button.disabled = pending || offline() || !dependencyId;
       for (const command of root.querySelectorAll<HTMLElement>('[data-command="link"]')) {
         if (selectedId) command.textContent = actionCommand('link', selectedId, dependencyId || 'ISSUE', dependencyType);
       }
@@ -707,6 +801,10 @@ export function mount(root: HTMLElement, transport: Transport): void {
 
   function onKey(event: KeyboardEvent): void {
     if (disposed || !root.isConnected || event.defaultPrevented || event.metaKey || event.altKey || event.ctrlKey) return;
+    if (root.querySelector('[data-product-dialog]')) {
+      if (event.key === 'Escape') { product.close(); event.preventDefault(); }
+      return;
+    }
     const target = event.target;
     if (drag) {
       if (event.key === 'Escape') { endDrag(); flushAfterDrag(); event.preventDefault(); }
@@ -782,7 +880,7 @@ export function mount(root: HTMLElement, transport: Transport): void {
   function onDragStart(event: DragEvent): void {
     const card = event.target instanceof Element ? event.target.closest<HTMLElement>('.issue-card[data-id]') : null;
     const issue = card ? byId(card.dataset.id || '') : undefined;
-    if (!card || !issue || pending || !event.dataTransfer) { event.preventDefault(); return; }
+    if (!card || !issue || pending || offline() || !event.dataTransfer || event.target instanceof HTMLInputElement) { event.preventDefault(); return; }
     if (loadingSnapshot || loadingProjects || (selectedId && (detailLoading || commentsLoading))) {
       event.preventDefault();
       actionError = 'Wait for the current refresh or issue details to finish before moving this issue.';

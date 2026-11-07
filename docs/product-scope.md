@@ -1,6 +1,40 @@
-# Beads for Orca: публичный выпуск и развитие
+# Beads for Orca: implementation, acceptance, and approved scope
 
-Статус: продуктовое согласование завершено. Владелец принял рекомендации Q1–Q24, включая весь третий раунд ответом «со всем согласен». Новые функции остаются согласованным roadmap, а не возможностями текущей версии. Следующий этап — публичная поставка существующего плагина с честным разделением текущих возможностей и roadmap.
+**Public stable: v0.1.2. Local source: 0.2.0 UNRELEASED.** The owner approved Q1–Q24, including all third-round recommendations. The working tree now implements substantial parts of that scope; it is no longer wholly roadmap. Implementation is not full acceptance or a release. **Native atomic idle-only dispatch to an existing session remains an unwaived upstream blocker.**
+
+## Implementation / acceptance matrix
+
+This matrix describes unreleased source. Linux evidence is recorded in [verification](verification.md), not inferred from implementation. Automated checks passed: 65 tests, real-`bd` smoke, typecheck/build, package/resource checks and the UI detector. Native and real-SSH observations are separated from the synthetic launch boundary. “Implemented” does not mean observed model execution. Historical decisions below are preserved in Russian.
+
+| Approved decisions | Unreleased implementation / acceptance criterion | Observed evidence and outstanding acceptance |
+| --- | --- | --- |
+| Q1–Q3 / first-round decisions | Orca-only delivery, MIT, English-primary/Russian-secondary public copy; explicit existing/new CLI-session scope, filters/history/blockers and remote support retained | Stable v0.1.2 public installation is historical evidence, not installation of 0.2.0. No release/tag or full-scope sign-off |
+| Q4, Q14 | Cross-project selection, explicitly split groups with one source Beads project and target workspace/recipient each; no automatic scheduler | Native panel task selection/preview observed. Source and target must share an execution host; no cross-host credentials or database copying |
+| Q5 | Internal dependencies remain ordered by live Beads readiness; external blockers block implementation unless tasks change or research is explicitly selected | Native blocked implementation preview disabled Send; research preview enabled Send. No actual dispatch in that observation |
+| Q6, Q15, Q24 | Distinct declared actor per handoff, Claim-before-work instructions, preserve ownership and continue only independent ready work | Prompt/contract implemented; real-bd manual Claim exercised. Executor compliance is not enforced or observed with a real model |
+| Q7 | Discover existing sessions but prohibit unsafe submission to busy/permission-waiting agents | **Blocked:** no native atomic idle/incarnation/permission check at PTY submission in Orca 1.4.250 or inspected 1.4.252. All existing sessions disabled; no precheck/hook fallback |
+| Q8, Q22 | Native workspace/host identity, local and explicitly mapped system-SSH `bd`, unsupported hosts visible | Real isolated localhost sshd snapshot/create/Markdown/filter writes observed. POSIX/Python3 required for file operations; real paired runtime/native macOS unverified |
+| Q9 | Timestamped private offline cache; no offline writes or dispatch; ambiguous send stays unknown and is not retried | Real SSH disconnect plus worker restart restored original cached fetch time and refused writes; actual launch interruption unverified |
+| Q10, Q18 | Dynamic personal filters; explicit portable `.beads-orca/filters.json` publication/deletion, no commit/push | Personal save, canceled publication, then explicit in-panel publication observed; personal copy retained |
+| Q11, Q17 | Full private context/history, selective export/import/delete; no background sync | Native export/delete/import observed. Imported entries remain unverified/inert, with no report/publish/cleanup/navigation actions; storage is bounded |
+| Q12 | Linked/manual Markdown read/open; explicit whole file or paired inclusive `startLine`/`endLine`, retained in prompt/history with selected text and full-file hash; no clipping | Native UI selected lines 3–4; returned text matched those lines and its hash matched the full file. Boundary/import/outside-excerpt regressions passed |
+| Q13, Q20 | Validated per-task structured reports, explicit reported-file navigation and concise publication, human completion/integration | Test-only launch-adapter smoke read a fixture report, opened a reported file in native editor, and wrote one real concise Beads comment while leaving the task open/unassigned. No real model report round trip; reported checks remain claims |
+| Q16 | Draft/history deletion is separate from stopping a session, releasing Claim, reverting files, or cleanup | Native explicit history deletion observed. Session stop stays an Orca action; the plugin does not promise rollback |
+| Q19 | Re-read tasks/readiness/docs/provider/native target/access mapping before Send; name changed categories/IDs/paths, persist known mismatch as rejected, preserve approved text and require explicit new preview | Native UI rejected a change outside the excerpt, named the document/range, preserved approved text, and refused reuse after restoration. The guarded test launch boundary was never called. Transport ambiguity stays unknown; sources are not atomically frozen |
+| Q21 | Full context above 3,500 JS code units in a visible target-host artifact; exact report identity and every task once; explicit artifact cleanup | Native preview showed the path. Test-only synthetic launch receipt enabled a real context-file hash match and cleanup preserving code/history; not proof of actual agent delivery |
+| Q23 | Offer separate native worktrees for parallel changes; preview/create explicitly, skip setup, no requested agent or `.beads` copy | Real native isolated worktree preview/create and source-to-new-target preview observed; no agent launch |
+| New-session transport across the approved scope | Native CLI terminal launch, exact `journaled`/`handed-to-terminal` receipts, unknown journal before effects, no automatic resend | Real provider discovery/native identity plus explicitly synthetic launch-adapter smoke. Executable presence is not auth; actual model launch/execution and nondefault-profile dispatch are not proven |
+
+### Outstanding acceptance, not new product decisions
+
+- Obtain upstream native atomic idle-only send with refusal receipts and remote support, then verify existing-session delivery. This requirement is not waived and prevents claiming Q1–Q24 complete.
+- Integrated Linux checks and the plugin-only archive are recorded in verification. These results do not establish real model execution, native macOS, real paired runtime, or a new public install.
+- Observe actual new-session delivery/report return before claiming end-to-end agent execution. Standard HOME native-profile discovery is the implemented limitation; `ORCA_USER_DATA_PATH` is stripped before worker launch.
+- Keep SSH configuration, native workspace bindings, and project routing trusted. Mapping fingerprints do not detect changed SSH-config contents; native path-only editor opening retains inspect/open TOCTOU. See [integration constraints](integration-constraints.md).
+
+## Preserved approved decisions and discussion history
+
+The following recommendations remain accepted; historical proposal wording is not a statement that the corresponding implementation is still absent. No new product scope or waiver is introduced by the matrix.
 
 ## Что уже поручил владелец
 
@@ -23,16 +57,16 @@
 
 Ни одно из этих решений не утверждает автономный диспетчер, автоматическое закрытие задач, конкретную модель хранения или способ удалённого исполнения.
 
-## Текущее предложение ценности
+## Исходное предложение ценности
 
-Рабочий вариант для обсуждения, не утверждённый текст README:
+Исторический рабочий вариант для обсуждения, не новый текст README:
 
 > **Your Beads board. Inside Orca.**
 > See what's ready, follow dependencies, and update tasks without leaving your workspace.
 
-Сейчас продукт — доска и таблица Beads внутри Orca: поиск, фильтры, зависимости, редактирование задач, комментарии, Claim/Close/Reopen и guarded Close → Undo. Данные и правила готовности остаются в Beads. Это плагин, не отдельный редактор и не Electron-приложение.
+Стабильный v0.1.2 — доска и таблица Beads внутри Orca: поиск, фильтры, зависимости, редактирование задач, комментарии, Claim/Close/Reopen и guarded Close → Undo. Данные и правила готовности остаются в Beads. Это плагин, не отдельный редактор и не Electron-приложение.
 
-Передача задач агентам входит в согласованный будущий scope, но отсутствует в текущей версии.
+В локальных unreleased-исходниках 0.2.0 добавлены handoff/remote/context/history-сценарии. Их реализация и оставшиеся критерии приёмки перечислены в матрице выше; безопасная передача существующей сессии заблокирована upstream.
 
 ## Публичная поставка и README
 
@@ -43,7 +77,7 @@
 5. Снять настоящие board/table/detail поверхности на демонстрационном Beads-проекте. Пометить демонстрационные данные; не публиковать пользовательские задачи или приватные пути.
 6. Указать требования к Orca и bd, разрешения trusted worker, реальные ограничения и ссылку на проверенный release.
 7. Применить согласованную MIT-лицензию с сохранением лицензий сторонних материалов. Репозиторий открыт; публичная установка проверяется отдельно от смены видимости.
-8. Вынести согласованные будущие функции в отдельный раздел Approved roadmap без обещаний сроков.
+8. Разделять стабильный выпуск, реализованные unreleased-возможности и оставшиеся критерии приёмки; исторический Approved roadmap больше не описывает всё рабочее дерево.
 
 ## Согласованный сценарий: передача выбранных задач
 
@@ -71,17 +105,9 @@
 
 Проверяемый результат предлагаемого среза: связанный существующий Markdown-файл открывается в нужном workspace; отсутствующая или недопустимая ссылка объясняется пользователю.
 
-## Согласованные направления и дополнительные предложения
+## Согласованные направления
 
-| Возможность | Статус | Что требуется при реализации |
-| --- | --- | --- |
-| Предупреждение о блокерах перед передачей | Q5 и Q15 приняты | Проверка реализации на реальном графе |
-| Шаблон поручения с критериями приёмки | Q12, Q19 и Q21 приняты | Безопасная доставка файлов контекста |
-| История передач | Q11 и Q17 приняты | Реализация личного хранения, экспорта и удаления |
-| Переход к workspace адресата | Часть поручения | Фокус конкретной сессии требует проверки API |
-| Сохранённые фильтры | Q10 и Q18 приняты | Переносимый формат проектных настроек |
-| Claim и завершение работы | Q6, Q13, Q15–Q16, Q20 и Q24 приняты | Проверка идентичности и наблюдаемых результатов |
-| Работа с локальными и удалёнными workspace | Q8–Q9 и Q22 приняты; приоритетный сценарий | Транспорт и проверка реальной совместимости |
+Блокеры, шаблон поручения, история, фильтры, Claim/проверка результатов, remote и worktree остаются частью принятого scope. Актуальный статус реализации и наблюдений указан в матрице выше; подробные контракты — в [workflow](workflow.md) и [integration constraints](integration-constraints.md). Переход к файлу в native editor не означает подтверждённый API фокуса любой агентской сессии.
 
 ## Не включать без отдельного решения
 
@@ -92,9 +118,9 @@
 - Единое поручение для нескольких несвязанных проектов и создание worktree без предпросмотра и явного действия: Q14 и Q23 разрешают разделённые поручения и согласованное создание изолированных рабочих деревьев.
 - Замену Beads или встроенного Tasks Orca.
 
-## Проверенные ограничения Orca API
+## Историческое исследование Host API и текущая граница
 
-Первичный источник: документация установленного Orca, полученная командами:
+Первичный источник исходного исследования: документация установленного Orca, полученная командами:
 
 ```sh
 orca-ide skills get orca-cli --reference references/plugins.md
@@ -107,9 +133,9 @@ Host API 1.3, pluginApi 1:
 - `agent.launch` принимает workspaceId, agent и prompt; запускает CLI в новом терминале. Описанный контракт не обещает structured chat и не принимает model/effort.
 - `terminal.sendText` возвращает accepted. Это не доказательство выполнения поручения.
 - `editor.open` открывает файл workspace; `workspace.open` показывает workspace. Для этих методов требуется workspace:write.
-- Новые сценарии потребуют дополнительных разрешений: agent:read, agent:launch, terminal:send и workspace:write по выбранному scope. Текущая версия имеет только workspace:read и settings:own.
-- Публичный discovery требует GitHub-репозиторий с topic orca-plugin и корректную структуру manifest/catalog/release. Текущий dev load сам по себе этого не подтверждает.
-- Текущий `src/orca/worker.ts` включает только workspace с `hostId === null` или `hostId === 'local'`; дополнительные пути проверяются локально. Удалённый сценарий потребует реального изменения исполнения, а не снятия фильтра. Возможность открыть remote workspace или запустить там агента не доказывает доступ к его Beads-базе.
+- Unreleased source запрашивает расширенные host-capabilities, включая private storage, workspace/editor и agent/terminal operations; точный список — в [manifest](../orca-plugin.json). Исторический v0.1.2 имел только workspace:read и settings:own. Trusted worker в обоих случаях не является песочницей.
+- Публичный discovery требует корректного репозитория и metadata. Историческая Git-установка v0.1.2 проверена отдельно; dev load 0.2.0 не подтверждает новую публичную установку.
+- Фильтр только локальных workspace относился к v0.1.2. Сейчас `ProjectAccess` исполняет native bd локально или через явно настроенный системный SSH, не подменяя remote-путь локальным. Открытие remote workspace или запуск там агента по-прежнему не доказывают доступ к его базе без этого транспорта.
 
 ## Принятые решения второго раунда
 
@@ -139,7 +165,7 @@ Host API 1.3, pluginApi 1:
 
 Рекомендация: иметь обзор подключённых проектов с группировкой по хосту и отдельный режим текущего workspace. Везде явно показывать проект, хост и доступность данных. Читать и изменять Beads на хосте соответствующего проекта; совпадающий локальный путь не является заменой удалённого проекта.
 
-Это продуктовый контракт. Способ удалённого исполнения и подключения требует технической проверки; текущее приложение такого паритета не обеспечивает.
+Это продуктовый контракт. В unreleased-исходниках есть явный SSH-транспорт; observed evidence и неподтверждённый paired/macOS parity разделены в матрице выше.
 
 ### Q9. Что показывать после обрыва связи?
 
@@ -165,16 +191,13 @@ Host API 1.3, pluginApi 1:
 
 ## Граница реализации
 
-Продуктовые ветви согласованы. Следующие технические задачи не требуют повторного согласования тех же сценариев, но не могут быть объявлены готовыми без проверки:
-
-- Remote/worktree: реализовать поддерживаемый путь исполнения bd на удалённом хосте с явной настройкой доступа; использовать штатный CLI Orca для worktree.
-- Доставка и результат: обеспечить наблюдаемые подтверждения транспорта, различимую идентичность Claim и структурированный отчёт.
+Продуктовые ветви согласованы. Local/SSH transport, native worktree и workflow реализованы в unreleased-исходниках, но полный scope нельзя объявлять принятым без native idle-only gate и оставшихся проверок из матрицы.
 
 Наличие метода запуска агента не доказывает доставку поручения, а наличие удалённого терминала не доказывает корректный транспорт Beads. Неподтверждённые возможности не превращаются в обещания README.
 
 ## Принятые решения третьего раунда
 
-Статус: все рекомендации Q14–Q24 приняты владельцем. Техническое исследование завершено на уровне исходников и справки; ограничения записаны в [integration-constraints.md](integration-constraints.md). Remote transport и новые handoff-сценарии ещё не реализованы и не проверены запуском.
+Статус: все рекомендации Q14–Q24 приняты владельцем. Историческое техническое исследование и актуальные ограничения записаны в [integration-constraints.md](integration-constraints.md); реализация и runtime-свидетельства учитываются отдельно в матрице выше.
 
 ### Q14. Смешанный выбор разделяется на явные поручения?
 
@@ -210,7 +233,7 @@ Host API 1.3, pluginApi 1:
 
 ### Q21. Большой контекст и отчёт передаются через явные артефакты поручения?
 
-Рекомендация: при превышении ограничения prompt использовать отдельный файл контекста на целевом хосте и короткую инструкцию агенту прочитать его. До отправки показать состав и расположение. Получать отчёт с идентификаторами поручения и задач в отдельный файл, а не угадывать его по терминальному тексту. Эти файлы не коммитятся автоматически и не копируют всю личную историю. Их жизненный цикл и явное удаление должны быть видимыми; очистка не удаляет рабочие изменения агента. Транспорт файлов ещё требует реализации и проверки.
+Рекомендация: при превышении ограничения prompt использовать отдельный файл контекста на целевом хосте и короткую инструкцию агенту прочитать его. До отправки показать состав и расположение. Получать отчёт с идентификаторами поручения и задач в отдельный файл, а не угадывать его по терминальному тексту. Эти файлы не коммитятся автоматически и не копируют всю личную историю. Их жизненный цикл и явное удаление должны быть видимыми; очистка не удаляет рабочие изменения агента. Транспорт реализован в unreleased source; реальный model/report round trip ещё не подтверждён.
 
 ### Q22. Допускается явная настройка remote-доступа вне авторизации Orca?
 

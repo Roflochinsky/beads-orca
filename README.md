@@ -8,9 +8,9 @@
 
 *Screenshots show the actual plugin panel in a headless browser, backed by an isolated Beads demo project. Tasks are synthetic and the displayed project path is sanitized; these are not screenshots of the Orca window.*
 
-## Install
+## Install the stable release
 
-Install the native plugin directly from Git; no source build or development link is needed. Community-catalog discovery is separate and may require review.
+The public stable release is **v0.1.2**. The local **0.2.0 source is UNRELEASED**; the new workflows below are not included in this installation. Install the native stable plugin directly from Git; no source build or development link is needed. Community-catalog discovery is separate and may require review.
 
 In Orca, open **Settings → Plugins → Add plugin → From Git URL** and enter:
 
@@ -20,7 +20,7 @@ https://github.com/Roflochinsky/beads-orca#v0.1.2
 
 Alternatively, use the [Orca community catalog](https://onorca.dev/plugins/roflochinsky.beads?catalog=community) once listed. Check the [listing status](https://www.onorca.dev/plugins/roflochinsky/beads-orca) if it is not available there; Git installation does not require a community listing.
 
-You will need:
+For v0.1.2 you will need:
 
 - Orca **1.4.248 or newer**.
 - Beads CLI **1.3.2** on the Orca process's `PATH`, and an already initialized local Beads project.
@@ -29,7 +29,7 @@ Review the publisher and access request during installation, approve only if you
 
 > **Trust matters.** This is a trusted worker, not a sandboxed panel. It runs with the full access of your user account and invokes the local `bd` CLI to read and change tasks. Install it only if you trust the plugin and the selected projects. Review the requested Orca capabilities before approval.
 
-## Work with your tasks
+## Work with your tasks (stable)
 
 - **Find the next issue.** Switch between board and sortable table, search by title, ID, description, assignee or label, and filter by view, type, priority and assignee.
 - **Understand dependencies.** See relationships in the board and issue details; highlight a task's blockers and dependents. Ready and blocked membership comes from Beads, not a separate rules engine.
@@ -39,19 +39,31 @@ Review the publisher and access request during installation, approve only if you
 | --- | --- |
 | [![Sortable table of demo issues](docs/images/table.png)](docs/images/table.png) | [![Demo issue details and dependencies](docs/images/detail.png)](docs/images/detail.png) |
 
-## Current limits
+## Stable release limits
 
-The plugin operates on **local** projects through the locally installed `bd`. It does not read or modify a remote workspace's Beads database, launch agents, hand tasks to agents, or close tasks based on agent session state. It adds its own panel; it does not replace Orca's built-in Tasks.
+**v0.1.2** operates on local projects through the locally installed `bd`. It does not access remote Beads databases or launch/handoff to agents. Both stable and unreleased source add a panel rather than replace Orca's built-in Tasks; neither closes tasks based on agent session state.
 
 Project configuration and routing are trusted. In Beads 1.3.2, the local-ID precheck and a subsequent write are not atomic: an external deletion between them can allow native prefix routing to another configured store. This plugin is not a database sandbox. See the [adapter contract](src/core/README.md) for details.
 
 This repository is for Orca only. For Tern, see [beads-tern](https://github.com/Roflochinsky/beads-tern); for other hosts and the original browser HUD, see [beads-hud](https://github.com/Roflochinsky/beads-hud) and its [native integrations](https://github.com/Roflochinsky/beads-hud/tree/main/native).
 
-## Approved roadmap
+## Unreleased 0.2.0 source
 
-These are **planned, not implemented**; no release dates are promised. The approved Q1–Q24 scope includes selecting tasks and previewing explicit handoffs to existing or new CLI agent sessions; blocker and Claim awareness; linked Markdown context; remote-host support; saved filters; personal handoff history; worktree guidance; and human review of results. Sending work will not itself mean an agent accepted it or a Beads task is complete.
+The working source implements these approved Q1–Q24 features, with acceptance limits recorded separately:
 
-See the [detailed product scope](docs/product-scope.md) and [integration constraints](docs/integration-constraints.md).
+- **Prepare explicit handoffs:** select tasks across projects, split them into source/target groups, review blockers and explicitly selected whole-file or line-range Markdown context, and choose implementation or research. Changed context rejects Send with details and requires a new preview. New CLI-session launch uses native Orca receipts; sending is not Claim, agent acceptance, or completion.
+- **Work across hosts:** local and explicitly mapped SSH projects, host availability, and timestamped offline snapshots. The Beads source and target code workspace must share an execution host. Unmapped paired hosts stay visible but unsupported.
+- **Keep context and review explicit:** linked Markdown read/open, personal filters and explicit project-filter publication, private handoff history with export/import/delete, native worktree preview/create, structured per-task reports, and explicit artifact cleanup. No automatic resend, task close, merge, push, or worktree deletion.
+
+**Existing-session handoff remains blocked.** Orca lacks an atomic native idle-only send gate; discovered existing sessions are disabled rather than risk interrupting work. This is an unwaived Q1–Q24 acceptance blocker, not a completed feature.
+
+Development requires Orca **1.4.250+**, Node **24+**, and `bd` **1.3.2** on the execution host. File access requires POSIX semantics and `python3`; remote access also requires system SSH and an explicit `remoteHosts` mapping. See [configuration and trust limits](docs/integration-constraints.md), including the standard native-profile restriction, editor-open race, and SSH-config caveat.
+
+Linux checks passed: **65 tests**, real-`bd` smoke, real isolated SSH/offline recovery, native panel scenarios, package/resource checks and the UI detector. **Actual model launch/execution, native macOS, real paired runtime, and a new public installation are not verified.** Provider executable discovery does not prove authentication. Imported history is an inert, unverified archive; a report is an executor's claim for human review, not proof of completion.
+
+See the [implementation/acceptance matrix and preserved decisions](docs/product-scope.md), [workflow contract](docs/workflow.md), and [verification record](docs/verification.md).
+
+[View the unreleased handoff preview in native Orca](docs/images/native-handoff-unreleased.png). This genuine 1301×900 capture uses synthetic tasks and the unmodified final bundle, without the test-only launch adapter; it does not show an agent launch.
 
 ## Development
 

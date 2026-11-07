@@ -1,8 +1,55 @@
-# Проверки Orca
+# Verification evidence
 
-## Публичная поставка 0.1.2
+## Unreleased 0.2.0 integration record — 2026-11-07
 
-На Linux x64, Node 24.22.1, Beads 1.3.2 и Orca 1.4.250 выполнены:
+Public installation remains **v0.1.2**. This section records the unreleased 0.2.0 implementation, not a full Q1–Q24 acceptance or release. Historical records below apply only to their named versions.
+
+Environment: Linux x64, Node 24.22.1, Beads 1.3.2, Orca 1.4.250. All mutations used isolated synthetic projects and a separate headless Orca profile. Implementation boundaries are linked in [workflow](workflow.md) and [integration constraints](integration-constraints.md).
+
+| Area | Observed evidence | Boundary / remaining acceptance |
+| --- | --- | --- |
+| Automated checks | Typecheck/build, 65/65 tests, real-`bd` smoke, packaging and source/bundle/archive resource checks passed. The final UI discovery-race fix was separately typechecked, built and exercised in native Orca. Impeccable detector returned `[]` | Automated tests do not prove model execution, native macOS or paired-runtime behavior |
+| Native Beads smoke | Built worker with real isolated `bd`: create, dependencies, ready, Claim, reopen, update, comments, document traversal/symlink refusal, personal/project filters | This smoke is not real model execution or a native GUI run |
+| SSH / offline | Real isolated localhost sshd, not mocked SSH: snapshot, create, Markdown read, filter write. After stopping sshd and restarting the worker, cached snapshot and original fetch time returned; writes were refused and local access still worked | Fixed remote zsh readonly `status` variable by using `beads_exit_status`. One real SSH fixture is not all-host/macOS/paired parity |
+| Native load and panel | Source and built manifests validated. Private-profile native load/approval/open showed three synthetic tasks. Markdown read and `editor.open` in the main editor were observed | No actual model launch; source validation is not public Git installation |
+| Blockers / providers | Blocked implementation preview disabled Send; explicit research preview enabled Send and showed long-context path. Installed native CLI providers discovered | Enabled Send/executable presence does not prove authentication, launch, prompt delivery, or agent acceptance |
+| Filter publication | Personal filter saved; Escape canceled without publication; explicit confirmation published the project file and retained its personal copy. Confirmation survived the 15-second background refresh; Escape restored the parent dialog without deleting the filter | System `confirm()` closed without a response on the headless fixture; in-panel confirmation is used instead. No automatic commit/push |
+| History archive | Export of one entry produced 21,244 characters; explicit deletion and import restored an unverified archive. Imported history exposed no report/publish/cleanup/open-change actions | Archive contents are claims and cannot authorize local operations; export may include private task/document text |
+| Native worktree | Real CLI preview/create succeeded on isolated branch `beads/smoke-isolated`, registered under fixture `HOME/orca/workspaces`. Source-Beads to new-target preview enabled Send | No agent launched and no Beads database copied. Worktree creation is not evidence of a model turn |
+| Native screenshots | Final genuine 1301×900 [handoff screenshot](images/native-handoff-unreleased.png), inspected after restoring the unmodified built plugin without the launch adapter | Synthetic tasks; source-to-separate-worktree preview, not model launch or release installation |
+| Fragments / stale preview | Native UI selected lines 3–4. Exact selected text and full-file hash were observed. An edit outside the excerpt produced `rejected` with document/range details, preserving the original prompt; restoring the file did not permit resend | The guarded test launch adapter was never called during either rejected send |
+| Recipient discovery | Native observation recorded disabled group controls while discovery was pending, then enabled controls and available providers. Subsequent target-worktree selection and preview succeeded | Prevents target/recipient edits racing an outstanding discovery or preview |
+
+Local archive: `release/beads-orca-0.2.0.tar.gz`, **344972 bytes**, containing only plugin resources, not Orca/Electron. SHA256 verification passed:
+
+```text
+3b08ee9856962b19cadc824a75c551574b981ba8158cc404a46621379731ec04
+```
+
+The first resource-closure check refused untracked runtime files; staging the owned sources resolved it without weakening the gate. Source manifest validation also rejected the initial 971-pixel-wide screenshot; a new native 1301×900 capture satisfied the required minimum.
+
+### Test-only launch-adapter smoke, not native agent dispatch
+
+The integration owner then used a **copy of the built plugin in a private profile**, with an `ORCA_CLI_COMMAND` wrapper intercepting **only `agent launch`** and returning an explicitly synthetic `journaled` receipt. No actual agent, model, or terminal was launched. Worktree discovery and all other native CLI calls remained real. This is distinct from the unmodified native observations and screenshot above.
+
+- UI Send recorded `journaled` once from that synthetic receipt. The actual written `context.md` SHA256 matched the complete 10,108-byte preview; no context was truncated.
+- An actual fixture `report.json` was read, and its reported `docs/result.md` opened in the native editor.
+- Explicit selected-task publication produced exactly one actual `bd` comment without full document text. The task remained open and unassigned.
+- Explicit cleanup removed only context/report artifacts, preserving `docs/result.md` and private history.
+
+These observations exercise downstream file/report/editor/publication/cleanup behavior with a synthetic launch boundary. They do not establish native receipt correctness, provider authentication, prompt delivery, or model execution. Temporary wrapper/profile cleanup remains the integration owner's responsibility.
+
+### Explicitly not verified or accepted
+
+- **Existing-session native idle-only dispatch remains blocked and unwaived.** Installed Orca 1.4.250 and inspected 1.4.252 lack an atomic idle check in the actual submission critical section. Discovery leaves existing sessions disabled; a precheck or asynchronous hook is not sufficient. Full Q1–Q24 completion/release is not claimed.
+- No paid/real model launch or actual agent execution was performed. New-session receipt interpretation and reports have unit coverage plus the explicitly synthetic launch-adapter smoke above, not observed end-to-end model/report return. A report, `journaled`, or `handed-to-terminal` status never proves task completion.
+- No native macOS run or real paired-runtime run. A configured macOS CI matrix is not an observed successful run in this task.
+- No new public Git installation, tag or release has been verified. Stable v0.1.2 installation evidence remains historical, not evidence for 0.2.0.
+- Custom nondefault-profile dispatch is not supported/proven: native worker startup strips `ORCA_USER_DATA_PATH`. The fixture exposed its own profile at `HOME/.config/orca`, not a real user profile.
+
+## Historical public delivery — 0.1.2
+
+На Linux x64, Node 24.22.1, Beads 1.3.2 и Orca 1.4.250 выполнены для выпуска 0.1.2:
 
 - TypeScript, сборка, 12 регрессионных тестов и smoke собранного worker с настоящим изолированным bd — успешно.
 - Регрессия `hostId: "local"` сначала воспроизвела исчезновение локального проекта, затем прошла после исправления. SSH, WSL и paired-пути остаются исключёнными из локального адаптера.
@@ -11,9 +58,9 @@
 - Исходный TypeScript worker и панель загружены в отдельный headless-профиль Orca. Плагин обнаружил демопроект; настоящая панель показала задачи и зависимости. `plugin shot`: `settled: true`, `errors: []`.
 - Gitleaks 8.30.1 проверил всю доступную Git-историю (8 коммитов до выпуска) и текущее дерево: совпадений не найдено. Это проверка по правилам сканера, не доказательство отсутствия любых чувствительных данных.
 
-README-скриншоты сняты с существующей панели 0.1.1 в headless Chromium с реальным изолированным demo worker; путь в отображении обезличен. Они показывают текущий интерфейс, но не служат доказательством Git-установки 0.1.2.
+README-скриншоты сняты с существующей панели 0.1.1 в headless Chromium с реальным изолированным demo worker; путь в отображении обезличен. Это исторические изображения board/table/detail, не доказательство новых workflow или Git-установки 0.1.2.
 
-### Нативная публичная Git-установка
+### Историческая нативная публичная Git-установка v0.1.2
 
 2026-11-06 завершена штатная установка `https://github.com/Roflochinsky/beads-orca#v0.1.2` в уже запущенный Orca 1.4.250 с отдельным профилем `/tmp/beads-orca-install-profile`. Использовались существующий CDP и CLI с `ORCA_USER_DATA_PATH` этого профиля; обычный пользовательский профиль не затрагивался.
 
@@ -29,7 +76,7 @@ README-скриншоты сняты с существующей панели 0.
 
 Community discovery не является условием нативной установки по Git URL. Эта проверка подтверждает установку, согласие на доступ и чтение демозадач настоящей панелью; она не повторяет mutation/lifecycle и все исторические UI-сценарии.
 
-## Статус разделения репозиториев
+## Историческое разделение репозиториев — 0.1.1
 
 Версия 0.1.1 выделена из исходного коммита `06fbecacae1537851886f7c9a6708751dee9c6e5`. После разделения на Linux x64 выполнены:
 
@@ -53,9 +100,9 @@ Community discovery не является условием нативной ус
 
 Это **не** доказательство работоспособности версии после разделения. Исторические проверки других хостов и их ограничения принадлежат [beads-hud/native](https://github.com/Roflochinsky/beads-hud/tree/main/native).
 
-## Команды после интеграции
+## Reproducing the integration checks
 
-В чистом checkout с Node 24 и установленным `bd` 1.3.2:
+Use Node 24 and `bd` 1.3.2 in an isolated checkout. The observations above identify what was actually run; the following is a reproduction procedure, not an instruction to create a release/tag:
 
 ```sh
 npm ci
@@ -64,9 +111,8 @@ npm run build
 npm test
 npm run smoke
 npm run package:plugins
-GITHUB_REF_NAME=v0.1.2 node scripts/check-version.mjs
 (cd release && sha256sum --check SHA256SUMS)
-tar -tzf release/beads-orca-0.1.2.tar.gz
+tar -tzf release/beads-orca-0.2.0.tar.gz
 orca-ide plugin validate ./dist/orca --json
 orca-ide plugin dev load ./dist/orca --json
 ```
@@ -77,11 +123,11 @@ orca-ide plugin dev load ./dist/orca --json
 orca-ide plugin open local.beads --panel beads --json
 ```
 
-На отдельно инициализированном временном Beads-проекте проверить snapshot, создание и изменение через настоящую панель, затем независимо прочитать результат установленным `bd`. Повторить поиск без потери фокуса, board/table, сортировку, зависимости, drag-to-claim и Close → Undo. Не использовать пользовательские базы для mutation smoke. Сохранить вывод команд и host proof отдельно; только после этого обновлять статус проверок.
+Use only isolated fixtures to check the final native panel, Q12 full/fragment context, Q19 actionable stale-preview refusal, report/import trust boundaries, confirmation dialogs, SSH/offline recovery, and native worktree behavior. Record the exact test count and package size/hash from that final tree, and run the repository's secret detector before any public delivery. Actual model launch, macOS, paired runtime, and installation require their own explicit evidence; do not infer them from unit tests or fixture previews. Never use user databases for mutation smoke.
 
-## Границы
+## Evidence boundaries across versions
 
-- Автоматический smoke использует собранный worker с минимальным host harness и настоящим `bd`, но не запускает GUI Orca.
-- Не проверяется удалённый workspace через локальный CLI. Дополнительные пути должны быть абсолютными и содержать доступную `.beads/`.
-- Плагин не обеспечивает атомарную изоляцию от prefix routing при внешнем удалении ID между precheck и mutation. См. [контракт core](../src/core/README.md).
-- Наличие workflow, исходных тестов или pre-migration proof само по себе не означает успешную новую проверку.
+- Automated smoke uses the built worker and a minimal host harness with real `bd`; it does not itself launch Orca GUI.
+- v0.1.2 excluded remote paths. Unreleased source accesses explicitly mapped SSH projects through remote native `bd`, not the local CLI; same-host source/target and POSIX/Python3 prerequisites apply.
+- The plugin does not atomically isolate prefix routing from external deletion between ID precheck and mutation. See the [core contract](../src/core/README.md). Descriptor-confined file operations also do not make path-only native editor opening atomic.
+- Source tests, configured CI, historical passes, and upstream inspection are different evidence classes; none implies a successful final integration run.

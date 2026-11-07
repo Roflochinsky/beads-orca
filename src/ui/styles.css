@@ -102,6 +102,7 @@ kbd { display: inline-flex; align-items: center; justify-content: center; min-wi
 .issue-card__top, .issue-card__footer, .issue-card__labels { display: flex; align-items: center; gap: 8px; }
 .issue-card__top { color: var(--color-ink-2); }
 .issue-card__top .icon { width: 16px; height: 16px; }
+.issue-card__top input, .issue-table input[type='checkbox'] { flex: none; margin: 0; accent-color: var(--color-ink); }
 .issue-card__top .chip { margin-left: auto; }
 .issue-card__title { font-weight: 500; overflow-wrap: anywhere; }
 .issue-card__footer { justify-content: space-between; color: var(--color-ink-2); font-size: 12px; }
@@ -116,7 +117,7 @@ kbd { display: inline-flex; align-items: center; justify-content: center; min-wi
 .issue-table { width: 100%; border-collapse: collapse; text-align: left; }
 .issue-table th, .issue-table td { padding: 12px; border-bottom: 1px solid var(--color-line); white-space: nowrap; }
 .issue-table th { position: sticky; top: 0; z-index: 1; background: var(--color-surface); color: var(--color-ink-2); font-size: 12px; font-weight: 500; }
-.issue-table td:nth-child(3) { min-width: 200px; white-space: normal; }
+.issue-table td:nth-child(4) { min-width: 200px; white-space: normal; }
 .issue-table tr[data-selected='true'] { background: var(--color-selected); }
 .issue-table__row.spotlight--chain { box-shadow: inset 0 0 0 1.5px var(--color-ink); }
 .table-sort { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: transparent; color: inherit; font-weight: 500; }
@@ -176,6 +177,25 @@ kbd { display: inline-flex; align-items: center; justify-content: center; min-wi
 .field { display: flex; flex-direction: column; gap: 4px; color: var(--color-ink-2); font-size: 12px; font-weight: 500; }
 .field input, .field select, .field textarea { width: 100%; min-height: 40px; padding: 8px 12px; border: 1px solid var(--color-line-strong); border-radius: 8px; background: var(--color-surface); color: var(--color-ink); font-size: 14px; font-weight: 400; }
 .field textarea { resize: vertical; }
+.dependency-form input { width: 100%; min-height: 32px; padding: 4px 8px; border: 1px solid var(--color-line-strong); border-radius: 8px; background: var(--color-surface); color: var(--color-ink); font-size: 14px; }
+.product-dialog { width: min(720px, calc(100vw - 32px)); }
+.product-dialog__inner { display: flex; flex-direction: column; max-height: calc(100vh - 32px); }
+.product-confirm .dialog__body p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.product-section { display: flex; flex-direction: column; gap: 8px; padding-top: 16px; border-top: 1px solid var(--color-line); }
+.product-section__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.product-list { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.product-list > li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; padding: 8px; border-radius: 8px; background: var(--color-wash); overflow-wrap: anywhere; }
+.product-list > li > .check, .product-list > li > div:first-child { flex: 1 1 180px; min-width: 0; }
+.product-list > li > .product-content, .product-list > li > p { flex-basis: 100%; }
+.product-list .check { white-space: normal; }
+.product-content { max-height: 320px; margin: 0; overflow: auto; color: var(--color-ink); }
+.product-warning { padding: 8px; border: 1px solid var(--color-line-strong); border-radius: 8px; }
+.product-controls { gap: 4px; }
+.product-filter-review { flex: 1 1 100%; }
+.product-filter-review summary { cursor: pointer; color: var(--color-ink-2); font-size: 12px; }
+.product-section [role="group"] { display: flex; flex-wrap: wrap; gap: 8px; }
+.product-section [role="group"] .check { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+@media (max-width: 480px) { .product-dialog .dialog__row { grid-template-columns: 1fr; gap: 8px; } }
 @media (max-width: 767px) {
   .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: 56px auto minmax(0, 1fr); grid-template-areas: 'bar' 'rail' 'main'; }
   .app-bar { grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; padding: 0 8px; }

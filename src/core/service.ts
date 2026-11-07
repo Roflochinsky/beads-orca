@@ -40,6 +40,69 @@ const INPUT_FIELDS: Record<string, readonly string[]> = {
 type Row = Record<string, unknown>;
 type Run = (args: string[], readonly: boolean, json?: boolean) => Promise<unknown>;
 
+/** Explicit system-SSH mapping; this never contains credentials. */
+export interface SshTarget {
+  destination: string;
+  configFile?: string;
+}
+
+/** The selected workspace or its transport is unavailable. */
+export class ProjectUnavailableError extends Error {
+  constructor(message: string, cause?: unknown) {
+    super(message, { cause });
+    this.name = 'ProjectUnavailableError';
+  }
+}
+
+/** The SSH transport failed, rather than the remote command reporting an error. */
+export class RemoteUnavailableError extends ProjectUnavailableError {
+  constructor(message: string, cause?: unknown) {
+    super(message, cause);
+    this.name = 'RemoteUnavailableError';
+  }
+}
+
+export function quoteRemote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+/** All dynamic remote command arguments must be individually shell-quoted. */
+export async function executeSsh(
+  target: SshTarget,
+  command: string,
+  options: { input?: string; timeoutMs: number; maxBuffer: number },
+): Promise<{ stdout: string; stderr: string }> {
+  if (!/^[A-Za-z0-9_][A-Za-z0-9_.+@:-]*$/u.test(target.destination)) {
+    throw new Error('SSH destination must be an explicit SSH host alias or user@host');
+  }
+  if (target.configFile !== undefined && (!isAbsolute(target.configFile) || target.configFile.includes('\0'))) {
+    throw new Error('SSH configFile must be an absolute path without NUL bytes');
+  }
+  const args = [
+    ...(target.configFile ? ['-F', target.configFile] : []),
+    '-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8',
+    '-o', 'ClearAllForwardings=yes', '--', target.destination, command,
+  ];
+  const execution = executeFile('ssh', args, {
+    encoding: 'utf8', shell: false, timeout: options.timeoutMs,
+    killSignal: 'SIGKILL', maxBuffer: options.maxBuffer, windowsHide: true,
+  });
+  // A failed SSH handshake can close stdin before the input has been sent.
+  execution.child.stdin?.on('error', () => undefined);
+  execution.child.stdin?.end(options.input);
+  try {
+    return await execution;
+  } catch (cause) {
+    const error = cause as ExecFileException & { stderr?: string };
+    if (error.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') throw cause;
+    if (error.code === 255 || error.code === 'ENOENT' || error.killed) {
+      const detail = error.stderr?.trim() || error.message;
+      throw new RemoteUnavailableError(`SSH connection to ${target.destination} unavailable: ${detail.slice(0, 8192)}`, cause);
+    }
+    throw cause;
+  }
+}
+
 function object(value: unknown, context: string): Row {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error(`${context} must be an object`);
@@ -96,44 +159,84 @@ function inputFor(request: RpcRequest): Row {
   return input;
 }
 
-async function runner(project: Project): Promise<Run> {
-  if (!isAbsolute(project.path)) throw new Error(`Registered project ${project.id} must have an absolute path`);
+async function runner(project: Project, target?: SshTarget): Promise<Run> {
+  const remote = project.hostId != null && project.hostId !== 'local';
+  if (remote && !target) throw new Error(`Remote project ${project.id} requires an explicit SSH transport`);
+  if (!remote && target) throw new Error(`Local project ${project.id} cannot use a remote transport`);
+  if (!isAbsolute(project.path) || project.path.includes('\0')) throw new Error(`Registered project ${project.id} must have an absolute path`);
   const beadsDir = join(project.path, '.beads');
-  try {
-    if (!(await stat(beadsDir)).isDirectory()) throw new Error('not a directory');
-  } catch (error) {
-    throw new Error(`Registered project ${project.id} has no accessible .beads directory; initialize that workspace with bd first`, { cause: error });
+  const deadline = Date.now() + REQUEST_TIMEOUT_MS;
+  let remainingBytes = OUTPUT_LIMIT;
+  let key: string;
+  if (target) {
+    const command = `cd -- ${quoteRemote(project.path)} || exit 124; test -d .beads && cd -P -- .beads && pwd -P`;
+    let result: { stdout: string; stderr: string };
+    try {
+      result = await executeSsh(target, command, { timeoutMs: REQUEST_TIMEOUT_MS, maxBuffer: remainingBytes });
+    } catch (cause) {
+      if (cause instanceof RemoteUnavailableError) throw cause;
+      if ((cause as ExecFileException).code === 124) throw new ProjectUnavailableError(`Remote workspace ${project.id} is offline or inaccessible`, cause);
+      throw new Error(`Registered remote project ${project.id} has no accessible .beads directory; initialize that workspace with bd first`, { cause });
+    }
+    remainingBytes -= Buffer.byteLength(result.stdout) + Buffer.byteLength(result.stderr);
+    const canonical = result.stdout.replace(/\n$/u, '');
+    if (!isAbsolute(canonical)) throw new Error('SSH returned an invalid canonical .beads path');
+    key = `ssh:${target.configFile ?? ''}:${target.destination}:${canonical}`;
+  } else {
+    try {
+      if (!(await stat(beadsDir)).isDirectory()) throw new Error('not a directory');
+    } catch (error) {
+      try {
+        if (!(await stat(project.path)).isDirectory()) throw new Error('not a directory');
+      } catch (cause) {
+        throw new ProjectUnavailableError(`Workspace ${project.id} is offline or inaccessible`, cause);
+      }
+      throw new Error(`Registered project ${project.id} has no accessible .beads directory; initialize that workspace with bd first`, { cause: error });
+    }
+    key = `local:${await realpath(beadsDir)}`;
   }
-  const key = await realpath(beadsDir);
   const env: NodeJS.ProcessEnv = {
     ...process.env, BEADS_DIR: beadsDir, BD_LAST_TOUCHED_FALLBACK: '0',
     // list/ready also support contributor auto-routing; pin the current store.
     BD_ROUTING_MODE: 'explicit', BD_ROUTING_DEFAULT: '.',
-    // config.go maps directory.labels through Viper to this JSON map override.
-    // Suppress list/ready directory filters without discarding hydrated labels.
+    // Suppress directory filters without discarding hydrated labels.
     BD_DIRECTORY_LABELS: '{}',
   };
   for (const name of ROUTING_ENV) delete env[name];
-  const deadline = Date.now() + REQUEST_TIMEOUT_MS;
-  let remainingBytes = OUTPUT_LIMIT;
   const execute: Run = async (args, readonly, json = true) => {
     const remainingMs = deadline - Date.now();
     if (remainingMs <= 0) throw new Error(`bd request timed out after ${REQUEST_TIMEOUT_MS}ms`);
     if (remainingBytes <= 0) throw new Error('bd output exceeded the 16 MiB request limit');
     const argv = ['--json', '--no-color', ...(readonly ? ['--readonly'] : []), ...args];
-    const execution = executeFile('bd', argv, {
-      cwd: project.path, env, encoding: 'utf8', shell: false,
-      timeout: remainingMs, killSignal: 'SIGKILL', maxBuffer: remainingBytes,
-      windowsHide: true,
-    });
-    // Never inherit a terminal or wait for interactive stdin.
-    execution.child.stdin?.end();
     let output: string;
     try {
-      const { stdout, stderr } = await execution;
-      remainingBytes -= Buffer.byteLength(stdout) + Buffer.byteLength(stderr);
-      output = stdout;
+      let result: { stdout: string; stderr: string };
+      if (target) {
+        // SSH uses the remote login shell, so quote every argument and never
+        // interpolate request data as shell syntax. 255 is reserved by SSH.
+        const command = [
+          `cd -- ${quoteRemote(project.path)} || exit 125`,
+          'test -d .beads || { echo "workspace has no .beads directory" >&2; exit 125; }',
+          `unset ${ROUTING_ENV.join(' ')} || { echo "Could not clear ambient Beads routing" >&2; exit 125; }`,
+          `export BEADS_DIR=${quoteRemote(beadsDir)} BD_LAST_TOUCHED_FALLBACK=0 BD_ROUTING_MODE=explicit BD_ROUTING_DEFAULT=. BD_DIRECTORY_LABELS='{}' || exit 125`,
+          `bd ${argv.map(quoteRemote).join(' ')}`,
+          'beads_exit_status=$?; if [ "$beads_exit_status" -eq 255 ]; then exit 254; fi; exit "$beads_exit_status"',
+        ].join('; ');
+        result = await executeSsh(target, command, { timeoutMs: remainingMs, maxBuffer: remainingBytes });
+      } else {
+        const execution = executeFile('bd', argv, {
+          cwd: project.path, env, encoding: 'utf8', shell: false,
+          timeout: remainingMs, killSignal: 'SIGKILL', maxBuffer: remainingBytes,
+          windowsHide: true,
+        });
+        // Never inherit a terminal or wait for interactive stdin.
+        execution.child.stdin?.end();
+        result = await execution;
+      }
+      remainingBytes -= Buffer.byteLength(result.stdout) + Buffer.byteLength(result.stderr);
+      output = result.stdout;
     } catch (cause) {
+      if (cause instanceof RemoteUnavailableError) throw cause;
       const error = cause as ExecFileException & { stdout?: string; stderr?: string };
       if (error.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') {
         throw new Error('bd output exceeded the 16 MiB request limit; no partial result returned', { cause });
@@ -230,14 +333,14 @@ function flags(input: Row, fields: readonly string[]): string[] {
 }
 
 /** The sole host RPC entrypoint. project is a host-registered ID, never a path. */
-export async function handleRequest(request: RpcRequest, projects: Project[]): Promise<unknown> {
+export async function handleRequest(request: RpcRequest, projects: Project[], target?: SshTarget): Promise<unknown> {
   object(request, 'request');
   if (typeof request.method !== 'string') throw new Error('request.method must be a string');
   const input = inputFor(request);
   if (request.method === 'projects') return projects.map((project) => ({ ...project }));
   const project = projects.find((candidate) => candidate.id === request.project);
   if (!project) throw new Error('A registered project ID is required');
-  const run = await runner(project);
+  const run = await runner(project, target);
   // Reject IDs absent from the local list; no shorthand is accepted here.
   // This is a precheck, not atomic isolation: bd 1.3.2 may prefix-route if an
   // external actor deletes the local ID before the next native command.

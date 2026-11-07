@@ -1,7 +1,21 @@
+export type ProjectAvailability = 'unknown' | 'online' | 'offline' | 'unsupported';
+
 export interface Project {
   id: string;
   name: string;
   path: string;
+  /** Orca's host identity; null or "local" denotes this machine. */
+  hostId?: string | null;
+  hostName?: string;
+  /** Null for an additional local path which is not an Orca workspace. */
+  workspaceId?: string | null;
+  /** Omitted when the focused workspace cannot be identified unambiguously. */
+  current?: boolean;
+  availability?: ProjectAvailability;
+  availabilityReason?: string;
+  lastFetchedAt?: string;
+  /** A live snapshot was read, but could not be persisted for offline use. */
+  cacheError?: string;
 }
 
 export interface Issue {
@@ -32,6 +46,8 @@ export interface Snapshot {
   readyIds: string[];
   blockedIds: string[];
   fetchedAt: string;
+  /** True when this is the last persisted snapshot rather than a live read. */
+  offline?: boolean;
 }
 
 export interface RpcRequest {
