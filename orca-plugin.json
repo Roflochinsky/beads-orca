@@ -3,7 +3,7 @@
   "manifestVersion": 2,
   "id": "beads",
   "name": "Beads Board",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Beads board, handoff previews, documents and personal history for local and explicitly mapped SSH workspaces.",
   "author": { "name": "Roflochinsky" },
   "repository": "https://github.com/Roflochinsky/beads-orca",

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.4 — 2026-11-07
+
+- Replaced text-only project/issue loading screens with layout-aware board and table skeletons in the existing warm monochrome palette.
+- Kept loaded tasks visible during background refresh; initial loads, project switches and retries use placeholders until their own data arrives.
+- Added accessible busy state and loading labels without announcing false zero counts. Placeholder decoration is hidden from assistive technology.
+- Limited loading motion to one opacity animation and made reduced-motion loading static. Error and empty-project states remain distinct from loading.
+
 ## 0.2.3 — 2026-11-07
 
 - Added independent epic-list filters for raw Beads status, priority and assignee, including Unassigned, alongside title/ID search.

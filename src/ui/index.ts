@@ -609,15 +609,26 @@ export function mount(root: HTMLElement, transport: Transport): void {
     const hiddenSelection = [...taskPool.values()].filter((item) => item.project !== projectId || !visibleIds.has(item.id)).length;
     return `<div class="main__head"><div class="main__title-row"><h1 class="visually-hidden" tabindex="-1" data-focus="board-heading">${view === 'all' ? 'All issues' : escapeHtml(groupNames[view])}</h1><div class="summary" role="group" aria-label="Issue views">${groups.map((group) => {
       const label = group === 'all' ? 'All issues' : groupNames[group];
-      return `<button type="button" class="view-button" data-action="view" data-value="${group}" data-focus="header-view-${group}" aria-pressed="${pressed(view === group)}" aria-label="${escapeHtml(label)}, ${count(group)} issues matching filters"><span>${escapeHtml(label)}</span><span class="view-button__count" aria-hidden="true">${snapshot ? count(group) : '—'}</span></button>`;
+      return `<button type="button" class="view-button" data-action="view" data-value="${group}" data-focus="header-view-${group}" aria-pressed="${pressed(view === group)}" aria-label="${escapeHtml(label)}, ${snapshot ? `${count(group)} issues matching filters` : 'issues not loaded'}"><span>${escapeHtml(label)}</span><span class="view-button__count" aria-hidden="true">${snapshot ? count(group) : '—'}</span></button>`;
     }).join('')}</div><div class="segmented" role="group" aria-label="Issue layout"><button type="button" data-action="layout" data-value="board" aria-pressed="${pressed(effectiveLayout === 'board')}"${view !== 'all' ? ' disabled title="Board is available in All issues; status views use Table"' : ' title="Board layout"'}>${icon('view_kanban')}Board</button><button type="button" data-action="layout" data-value="table" aria-pressed="${pressed(effectiveLayout === 'table')}" title="Table layout">${icon('table_rows')}Table</button></div></div><p class="scope-note"><strong>Scope:</strong> ${escapeHtml(scopeParts.join(' · '))}${view === 'all' ? ` · closed ${showClosed ? 'included' : 'hidden'}` : ''}${snapshot ? ` · ${filtered().length} shown` : ''}${taskPool.size ? ` · ${taskPool.size} selected${hiddenSelection ? ` · ${hiddenSelection} hidden by filters or project` : ''}` : ''}${offline() && snapshot ? ' · stale' : ''}</p><div class="main__tools">${filters(hiddenSelection)}<div class="product-controls">${product.controls()}<button type="button" class="btn btn--icon" data-action="spotlight" aria-label="Highlight dependencies" aria-pressed="${pressed(spotlightOn)}" title="Highlight dependencies on hover or focus">${icon('account_tree')}</button></div></div>${scope ? '<p class="muted">Saved filter scope limits project choices. Clear filters to see all projects.</p>' : ''}</div>`;
   }
 
+  function loadingState(): string {
+    const label = loadingProjects ? 'Loading projects…' : 'Loading issues…';
+    const line = '<span class="skeleton-line"></span>';
+    const card = `<div class="skeleton-card"><div class="skeleton-card__meta">${line}${line}</div><span class="skeleton-line skeleton-line--title"></span><span class="skeleton-line skeleton-line--short"></span><div class="skeleton-card__meta">${line}${line}</div></div>`;
+    const table = view !== 'all' || layout === 'table';
+    const content = table
+      ? `<div class="skeleton-table"><div class="skeleton-row skeleton-row--head">${line.repeat(5)}</div>${`<div class="skeleton-row"><span class="skeleton-line skeleton-line--title"></span>${line.repeat(4)}</div>`.repeat(7)}</div>`
+      : `<div class="skeleton-board">${`<div class="skeleton-column"><div class="skeleton-column__heading">${line}</div>${card.repeat(3)}</div>`.repeat(4)}</div>`;
+    return `<div class="loading-state"><span class="loading-state__label" role="status">${label}</span><div class="loading-state__preview" aria-hidden="true">${content}</div></div>`;
+  }
+
   function bodyState(): string {
-    if (!snapshot && (loadingProjects || loadingSnapshot)) return `<div class="empty-state" role="status"><h2>${loadingProjects ? 'Loading projects…' : 'Loading issues…'}</h2><p>${loadingProjects ? 'Finding available workspaces.' : 'Reading this project from Beads.'}</p></div>`;
+    if (!snapshot && (loadingProjects || loadingSnapshot)) return loadingState();
     if (!snapshot && loadError) return `<div class="empty-state empty-state--error" role="alert"><h2>${loadErrorSource === 'projects' ? 'Projects unavailable' : 'Issues unavailable'}</h2><p>${loadErrorSource === 'projects' ? 'Could not load the project list.' : 'Could not load issues for this project.'} Try again to reconnect.</p><details data-persist="load-details"><summary data-focus="load-details">Technical details</summary><p>${escapeHtml(loadError)}</p></details><button class="btn btn--outlined" type="button" data-action="retry"${pending ? ' disabled' : ''}>Retry loading</button></div>`;
     if (!projects.length) return '<div class="empty-state"><h2>No projects available</h2><p>Add a local Beads workspace in Orca or an additional project path in the plugin settings, then refresh.</p><button class="btn btn--outlined" type="button" data-action="retry">Refresh</button></div>';
-    if (!snapshot) return '<div class="empty-state" role="status"><h2>Loading issues…</h2><p>Reading this project from Beads.</p></div>';
+    if (!snapshot) return loadingState();
     return '';
   }
 
@@ -666,6 +677,7 @@ export function mount(root: HTMLElement, transport: Transport): void {
     patchIsland('rail', rail());
     patchIsland('head', mainHead());
     patchIsland('banners', errorBanner());
+    root.querySelector<HTMLElement>('[data-island="content"]')!.setAttribute('aria-busy', String(loadingProjects || loadingSnapshot));
     const state = bodyState();
     const nextContentKey = state || JSON.stringify([projectId, filterCacheKey, layout, sortKey, sortDirection, allIssues().length ? '' : [offline(), pending]]);
     if (nextContentKey !== contentKey) {

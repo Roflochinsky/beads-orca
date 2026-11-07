@@ -10,12 +10,12 @@
 
 ## Install the stable release
 
-Current release: **v0.2.3**. Install the native plugin directly from Git; no source build or development link is needed. Existing-session handoff remains disabled. Community-catalog discovery is separate and may require review.
+Current release: **v0.2.4**. Install the native plugin directly from Git; no source build or development link is needed. Existing-session handoff remains disabled. Community-catalog discovery is separate and may require review.
 
 In Orca, open **Settings → Plugins → Add plugin → From Git URL** and enter:
 
 ```text
-https://github.com/Roflochinsky/beads-orca#v0.2.3
+https://github.com/Roflochinsky/beads-orca#v0.2.4
 ```
 
 Alternatively, use the [Orca community catalog](https://onorca.dev/plugins/roflochinsky.beads?catalog=community) once listed. Check the [listing status](https://www.onorca.dev/plugins/roflochinsky/beads-orca) if it is not available there; Git installation does not require a community listing.
@@ -42,6 +42,10 @@ Choose a project by its workspace, host and full path in the project picker. Ide
 | Table | Issue details |
 | --- | --- |
 | [![Sortable table of demo issues](docs/images/table.png)](docs/images/table.png) | [![Demo issue details and dependencies](docs/images/detail.png)](docs/images/detail.png) |
+
+## New in 0.2.4
+
+Board and table skeletons now preserve the shape of the view while projects or issues load. Background refresh keeps existing tasks visible. Loading labels and busy state are accessible; reduced-motion preferences disable the subtle pulse. Errors and empty workspaces never masquerade as loading.
 
 ## New in 0.2.3
 
