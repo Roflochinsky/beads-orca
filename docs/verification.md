@@ -37,15 +37,29 @@ The integration owner then used a **copy of the built plugin in a private profil
 - Explicit selected-task publication produced exactly one actual `bd` comment without full document text. The task remained open and unassigned.
 - Explicit cleanup removed only context/report artifacts, preserving `docs/result.md` and private history.
 
-These observations exercise downstream file/report/editor/publication/cleanup behavior with a synthetic launch boundary. They do not establish native receipt correctness, provider authentication, prompt delivery, or model execution. Temporary wrapper/profile cleanup remains the integration owner's responsibility.
+These observations exercise downstream file/report/editor/publication/cleanup behavior with a synthetic launch boundary. They do not establish native receipt correctness, provider authentication, prompt delivery or model execution. After verification, the temporary adapter, SSH keys, synthetic repositories and private profile were removed; only the owned Orca/SSH services were stopped. The real user profile was not modified.
 
 ### Explicitly not verified or accepted
 
 - **Existing-session native idle-only dispatch remains blocked and unwaived.** Installed Orca 1.4.250 and inspected 1.4.252 lack an atomic idle check in the actual submission critical section. Discovery leaves existing sessions disabled; a precheck or asynchronous hook is not sufficient. Full Q1–Q24 completion/release is not claimed.
 - No paid/real model launch or actual agent execution was performed. New-session receipt interpretation and reports have unit coverage plus the explicitly synthetic launch-adapter smoke above, not observed end-to-end model/report return. A report, `journaled`, or `handed-to-terminal` status never proves task completion.
-- No native macOS run or real paired-runtime run. A configured macOS CI matrix is not an observed successful run in this task.
-- No new public Git installation, tag or release has been verified. Stable v0.1.2 installation evidence remains historical, not evidence for 0.2.0.
+- No native Orca UI run on macOS or real paired-runtime run. Successful macOS CI verifies its build/tests/real-`bd` smoke, not the application UI or paired transport.
+- No v0.2.0 tag or stable release was created. The source-preview Git installation below is separate from the historical stable v0.1.2 evidence.
 - Custom nondefault-profile dispatch is not supported/proven: native worker startup strips `ORCA_USER_DATA_PATH`. The fixture exposed its own profile at `HOME/.config/orca`, not a real user profile.
+
+### Published source, CI and native Git installation
+
+Implementation commit: [`035d4a2a2448439a6127f2a5ad03cc6b36fd8963`](https://github.com/Roflochinsky/beads-orca/commit/035d4a2a2448439a6127f2a5ad03cc6b36fd8963), branch [`feat/approved-orca-workflows`](https://github.com/Roflochinsky/beads-orca/tree/feat/approved-orca-workflows). Stable `main`/v0.1.2 was not replaced.
+
+- [Actions run 42369795828](https://github.com/Roflochinsky/beads-orca/actions/runs/42369795828) passed both `ubuntu-24.04` and `macos-15` build jobs. They ran typecheck/build, 65 tests, real-`bd` smoke, packaging and resource checks. Release was skipped because this was not a tag.
+- Before source publication, Gitleaks scanned the staged change with redaction and found no matches. This is evidence under its rules, not proof that every possible secret is absent.
+- Installed `https://github.com/Roflochinsky/beads-orca#feat/approved-orca-workflows` through Orca's native Git-URL UI in the isolated profile. The UI resolved commit `035d4a2`; publisher trust and the requested trusted-worker/capability access were approved.
+- `plugin list` then reported `roflochinsky.beads`, version `0.2.0`, `status: running`, `isDev: false`, `needsReconsent: false`, `restarts: 0`.
+- Native source provenance: `kind: git`, `resolvedCommit: 035d4a2a2448439a6127f2a5ad03cc6b36fd8963`, `contentHash: cda17d61406311cd4233ec7aa5c165bd90cc7b58939854bb917be9c548ab07f9`.
+- The installed source panel showed three synthetic tasks, discovered providers and produced an enabled new-session handoff preview. No Send/model execution was performed in this public-installation pass.
+- Native `plugin shot` reported 1301×900, `settled: true`, `errors: []`. The [public Git-installation screenshot](images/public-git-preview.png) was inspected and retained. `themeApplied: false`: this does not prove dark-theme parity.
+
+Later documentation-only commits record this evidence; they do not change the tested runtime source. README offers the exact tested commit as a source-preview installation, not an accepted full-scope release.
 
 ## Historical public delivery — 0.1.2
 

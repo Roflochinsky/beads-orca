@@ -1,6 +1,6 @@
 # Beads for Orca: implementation, acceptance, and approved scope
 
-**Public stable: v0.1.2. Local source: 0.2.0 UNRELEASED.** The owner approved Q1–Q24, including all third-round recommendations. The working tree now implements substantial parts of that scope; it is no longer wholly roadmap. Implementation is not full acceptance or a release. **Native atomic idle-only dispatch to an existing session remains an unwaived upstream blocker.**
+**Public stable: v0.1.2. Published source preview: 0.2.0 UNRELEASED.** The owner approved Q1–Q24, including all third-round recommendations. Implemented source is published in `feat/approved-orca-workflows`; Ubuntu/macOS CI and Linux public Git installation passed. Implementation is not full acceptance or a stable release. **Native atomic idle-only dispatch to an existing session remains an unwaived upstream blocker.**
 
 ## Implementation / acceptance matrix
 
@@ -28,7 +28,7 @@ This matrix describes unreleased source. Linux evidence is recorded in [verifica
 ### Outstanding acceptance, not new product decisions
 
 - Obtain upstream native atomic idle-only send with refusal receipts and remote support, then verify existing-session delivery. This requirement is not waived and prevents claiming Q1–Q24 complete.
-- Integrated Linux checks and the plugin-only archive are recorded in verification. These results do not establish real model execution, native macOS, real paired runtime, or a new public install.
+- Integrated checks passed on Ubuntu and macOS CI; Linux public Git installation and the plugin-only archive are recorded in verification. This does not establish real model execution, native Orca UI on macOS or real paired-runtime behavior.
 - Observe actual new-session delivery/report return before claiming end-to-end agent execution. Standard HOME native-profile discovery is the implemented limitation; `ORCA_USER_DATA_PATH` is stripped before worker launch.
 - Keep SSH configuration, native workspace bindings, and project routing trusted. Mapping fingerprints do not detect changed SSH-config contents; native path-only editor opening retains inspect/open TOCTOU. See [integration constraints](integration-constraints.md).
 

@@ -2,7 +2,7 @@
 
 ## Unreleased — 0.2.0 source
 
-Public installation remains pinned to **v0.1.2**. This section describes local source changes, not a release, tag, or newly verified public installation.
+Stable installation remains pinned to **v0.1.2**. Source preview 0.2.0 is published in `feat/approved-orca-workflows`; its Git installation is verified separately. This is not a stable release or full product acceptance.
 
 - Added native workspace/host identities, explicit `remoteHosts` SSH configuration, same-host source/target checks, and timestamped offline snapshot caching with writes disabled. Unsupported paired hosts remain visible; SSH access does not inherit Orca credentials.
 - Added cross-project task selection and explicit handoff groups, blocker-aware implementation/research previews, actionable stale-preview rejection with changed categories/IDs/paths, and a distinct declared Claim actor per handoff. Rejected previews require explicit renewal; Claim instructions do not enforce agent behavior.
@@ -10,7 +10,7 @@ Public installation remains pinned to **v0.1.2**. This section describes local s
 - Added linked/manual Markdown read/open and explicit whole-file or inclusive line-range context with full-file hash revalidation, personal filters and explicit `.beads-orca/filters.json` publication, private chunked history with export/import/delete, and inert unverified imported archives.
 - Added native worktree preview/create with setup skipped, full-context artifacts for long prompts, validated per-task report loading, reported-file navigation, explicit concise Beads publication, and separate artifact cleanup. No automatic task close, merge, push, or worktree deletion.
 - Kept existing-session dispatch disabled: Orca 1.4.250 and inspected upstream 1.4.252 lack an atomic native idle-only submission gate. This remains an unwaived full-acceptance blocker.
-- Verified Linux typecheck/build, 65 tests, real-`bd` smoke, real isolated SSH/offline recovery, native panel/worktree/fragment/stale-preview scenarios, package resources and the UI detector. Kept synthetic launch-adapter evidence separate from actual model execution. Native macOS, real paired runtime, nondefault-profile dispatch, and a new public installation remain unverified. See [acceptance status](docs/product-scope.md), [constraints](docs/integration-constraints.md), and [verification](docs/verification.md).
+- Passed Ubuntu/macOS CI, Linux real-SSH/offline and native panel/worktree/fragment/stale-preview checks. Verified public Git installation of source commit `035d4a2a2448439a6127f2a5ad03cc6b36fd8963`. Kept synthetic launch-adapter evidence separate from actual model execution. Native Orca UI on macOS, real paired runtime and nondefault-profile dispatch remain unverified. See [acceptance status](docs/product-scope.md), [constraints](docs/integration-constraints.md), and [verification](docs/verification.md).
 - Fixed non-JSON optional snapshot fields, opaque native CLI refusal messages, headless browser confirmations, and handoff controls changing while recipient discovery or preview was in progress.
 
 ## 0.1.2 — 2026-11-06

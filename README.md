@@ -10,7 +10,7 @@
 
 ## Install the stable release
 
-The public stable release is **v0.1.2**. The local **0.2.0 source is UNRELEASED**; the new workflows below are not included in this installation. Install the native stable plugin directly from Git; no source build or development link is needed. Community-catalog discovery is separate and may require review.
+The public stable release is **v0.1.2**. The **0.2.0 source preview is UNRELEASED**; the new workflows below are not included in the stable installation. Install the native stable plugin directly from Git; no source build or development link is needed. Community-catalog discovery is separate and may require review.
 
 In Orca, open **Settings → Plugins → Add plugin → From Git URL** and enter:
 
@@ -59,9 +59,15 @@ The working source implements these approved Q1–Q24 features, with acceptance 
 
 Development requires Orca **1.4.250+**, Node **24+**, and `bd` **1.3.2** on the execution host. File access requires POSIX semantics and `python3`; remote access also requires system SSH and an explicit `remoteHosts` mapping. See [configuration and trust limits](docs/integration-constraints.md), including the standard native-profile restriction, editor-open race, and SSH-config caveat.
 
-Linux checks passed: **65 tests**, real-`bd` smoke, real isolated SSH/offline recovery, native panel scenarios, package/resource checks and the UI detector. **Actual model launch/execution, native macOS, real paired runtime, and a new public installation are not verified.** Provider executable discovery does not prove authentication. Imported history is an inert, unverified archive; a report is an executor's claim for human review, not proof of completion.
+**65 tests**, real-`bd` smoke and package checks passed in [Ubuntu/macOS CI](https://github.com/Roflochinsky/beads-orca/actions/runs/42369795828). Linux native-panel, real isolated SSH/offline and public Git-installation checks also passed. **Actual model execution, Orca's native macOS UI and real paired-runtime behavior remain unverified.** Provider discovery does not prove authentication; imported history and reported results remain unverified claims for human review.
 
 See the [implementation/acceptance matrix and preserved decisions](docs/product-scope.md), [workflow contract](docs/workflow.md), and [verification record](docs/verification.md).
+
+To try the tested **source preview**, use the same Git URL installation flow with this pinned commit. This is not the stable release or full Q1–Q24 acceptance; existing-session handoff remains disabled.
+
+```text
+https://github.com/Roflochinsky/beads-orca#035d4a2a2448439a6127f2a5ad03cc6b36fd8963
+```
 
 [View the unreleased handoff preview in native Orca](docs/images/native-handoff-unreleased.png). This genuine 1301×900 capture uses synthetic tasks and the unmodified final bundle, without the test-only launch adapter; it does not show an agent launch.
 
