@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased — 0.2.0 source
+## 0.2.0 — 2026-11-07
 
-Stable installation remains pinned to **v0.1.2**. Source preview 0.2.0 is published in `feat/approved-orca-workflows`; its Git installation is verified separately. This is not a stable release or full product acceptance.
+Published at the owner's explicit request with the known existing-session limitation retained. This release is not full Q1–Q24 acceptance. Install from `https://github.com/Roflochinsky/beads-orca#v0.2.0`; runtime source is unchanged from the tested preview.
 
 - Added native workspace/host identities, explicit `remoteHosts` SSH configuration, same-host source/target checks, and timestamped offline snapshot caching with writes disabled. Unsupported paired hosts remain visible; SSH access does not inherit Orca credentials.
 - Added cross-project task selection and explicit handoff groups, blocker-aware implementation/research previews, actionable stale-preview rejection with changed categories/IDs/paths, and a distinct declared Claim actor per handoff. Rejected previews require explicit renewal; Claim instructions do not enforce agent behavior.

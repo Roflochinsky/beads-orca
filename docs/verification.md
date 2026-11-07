@@ -1,8 +1,8 @@
 # Verification evidence
 
-## Unreleased 0.2.0 integration record — 2026-11-07
+## Pre-release integration record — 2026-11-07
 
-Public installation remains **v0.1.2**. This section records the unreleased 0.2.0 implementation, not a full Q1–Q24 acceptance or release. Historical records below apply only to their named versions.
+This section records checks performed before publication of 0.2.0. The owner subsequently explicitly requested release and installation with the documented existing-session limitation. Historical records below apply only to their named versions; publication does not imply full Q1–Q24 acceptance.
 
 Environment: Linux x64, Node 24.22.1, Beads 1.3.2, Orca 1.4.250. All mutations used isolated synthetic projects and a separate headless Orca profile. Implementation boundaries are linked in [workflow](workflow.md) and [integration constraints](integration-constraints.md).
 
@@ -44,7 +44,7 @@ These observations exercise downstream file/report/editor/publication/cleanup be
 - **Existing-session native idle-only dispatch remains blocked and unwaived.** Installed Orca 1.4.250 and inspected 1.4.252 lack an atomic idle check in the actual submission critical section. Discovery leaves existing sessions disabled; a precheck or asynchronous hook is not sufficient. Full Q1–Q24 completion/release is not claimed.
 - No paid/real model launch or actual agent execution was performed. New-session receipt interpretation and reports have unit coverage plus the explicitly synthetic launch-adapter smoke above, not observed end-to-end model/report return. A report, `journaled`, or `handed-to-terminal` status never proves task completion.
 - No native Orca UI run on macOS or real paired-runtime run. Successful macOS CI verifies its build/tests/real-`bd` smoke, not the application UI or paired transport.
-- No v0.2.0 tag or stable release was created. The source-preview Git installation below is separate from the historical stable v0.1.2 evidence.
+- No v0.2.0 tag or release existed during this pre-release pass. The owner subsequently authorized release; the observations below still identify the exact commits they exercised.
 - Custom nondefault-profile dispatch is not supported/proven: native worker startup strips `ORCA_USER_DATA_PATH`. The fixture exposed its own profile at `HOME/.config/orca`, not a real user profile.
 
 ### Published source, CI and native Git installation
@@ -142,6 +142,6 @@ Use only isolated fixtures to check the final native panel, Q12 full/fragment co
 ## Evidence boundaries across versions
 
 - Automated smoke uses the built worker and a minimal host harness with real `bd`; it does not itself launch Orca GUI.
-- v0.1.2 excluded remote paths. Unreleased source accesses explicitly mapped SSH projects through remote native `bd`, not the local CLI; same-host source/target and POSIX/Python3 prerequisites apply.
+- v0.1.2 excluded remote paths. Version 0.2.0 accesses explicitly mapped SSH projects through remote native `bd`, not the local CLI; same-host source/target and POSIX/Python3 prerequisites apply.
 - The plugin does not atomically isolate prefix routing from external deletion between ID precheck and mutation. See the [core contract](../src/core/README.md). Descriptor-confined file operations also do not make path-only native editor opening atomic.
 - Source tests, configured CI, historical passes, and upstream inspection are different evidence classes; none implies a successful final integration run.

@@ -1,6 +1,6 @@
 # Orca and Beads integration constraints
 
-**0.2.0 source is UNRELEASED; public stable installation remains v0.1.2.** The source implements local/SSH project access and explicit workflow operations. This is not a claim of full Q1–Q24 acceptance: existing-session dispatch needs an upstream native atomic idle-only gate. Source contracts, observed runtime evidence, and outstanding acceptance are distinguished in [workflow](workflow.md), [verification](verification.md), and the [scope matrix](product-scope.md). Original investigation used Orca 1.4.250 / Host API 1.3 and Beads 1.3.2; later inspection of Orca 1.4.252 did not resolve that gate.
+**Release: 0.2.0.** Published at the owner's explicit request with the existing-session limitation retained. Local/SSH access and explicit workflow operations are implemented; full Q1–Q24 acceptance is not claimed. Existing-session dispatch needs an upstream native atomic idle-only gate. Source contracts, runtime evidence and outstanding acceptance are distinguished in [workflow](workflow.md), [verification](verification.md) and the [scope matrix](product-scope.md). Investigation used Orca 1.4.250 / Host API 1.3 and Beads 1.3.2; inspection of Orca 1.4.252 did not resolve that gate.
 
 ## Remote configuration and execution
 

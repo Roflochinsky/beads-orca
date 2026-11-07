@@ -10,20 +10,21 @@
 
 ## Install the stable release
 
-The public stable release is **v0.1.2**. The **0.2.0 source preview is UNRELEASED**; the new workflows below are not included in the stable installation. Install the native stable plugin directly from Git; no source build or development link is needed. Community-catalog discovery is separate and may require review.
+Current release: **v0.2.0**. Install the native plugin directly from Git; no source build or development link is needed. Existing-session handoff remains disabled; this release does not claim full Q1–Q24 acceptance. Community-catalog discovery is separate and may require review.
 
 In Orca, open **Settings → Plugins → Add plugin → From Git URL** and enter:
 
 ```text
-https://github.com/Roflochinsky/beads-orca#v0.1.2
+https://github.com/Roflochinsky/beads-orca#v0.2.0
 ```
 
 Alternatively, use the [Orca community catalog](https://onorca.dev/plugins/roflochinsky.beads?catalog=community) once listed. Check the [listing status](https://www.onorca.dev/plugins/roflochinsky/beads-orca) if it is not available there; Git installation does not require a community listing.
 
-For v0.1.2 you will need:
+Requirements:
 
-- Orca **1.4.248 or newer**.
-- Beads CLI **1.3.2** on the Orca process's `PATH`, and an already initialized local Beads project.
+- Orca **1.4.250 or newer**.
+- Beads CLI **1.3.2** on the execution host and an initialized Beads project.
+- POSIX file semantics and `python3` for document/artifact operations; system SSH and explicit configuration for remote hosts.
 
 Review the publisher and access request during installation, approve only if you trust the plugin, and open the **Beads Board** panel in Orca. Local Orca workspaces are listed automatically. To add another local project, use **Additional local Beads project paths** in the plugin settings, one absolute project path per line.
 
@@ -41,15 +42,15 @@ Review the publisher and access request during installation, approve only if you
 
 ## Stable release limits
 
-**v0.1.2** operates on local projects through the locally installed `bd`. It does not access remote Beads databases or launch/handoff to agents. Both stable and unreleased source add a panel rather than replace Orca's built-in Tasks; neither closes tasks based on agent session state.
+The plugin adds a panel rather than replacing Orca's built-in Tasks. Existing-session handoff is disabled until Orca supports atomic idle-only submission. Sending a new-session handoff never automatically claims or closes a task. Remote access requires explicit SSH mapping; source and target must share an execution host.
 
 Project configuration and routing are trusted. In Beads 1.3.2, the local-ID precheck and a subsequent write are not atomic: an external deletion between them can allow native prefix routing to another configured store. This plugin is not a database sandbox. See the [adapter contract](src/core/README.md) for details.
 
 This repository is for Orca only. For Tern, see [beads-tern](https://github.com/Roflochinsky/beads-tern); for other hosts and the original browser HUD, see [beads-hud](https://github.com/Roflochinsky/beads-hud) and its [native integrations](https://github.com/Roflochinsky/beads-hud/tree/main/native).
 
-## Unreleased 0.2.0 source
+## Workflows in 0.2.0
 
-The working source implements these approved Q1–Q24 features, with acceptance limits recorded separately:
+This release implements the following approved features; implementation and full-scope acceptance remain distinct:
 
 - **Prepare explicit handoffs:** select tasks across projects, split them into source/target groups, review blockers and explicitly selected whole-file or line-range Markdown context, and choose implementation or research. Changed context rejects Send with details and requires a new preview. New CLI-session launch uses native Orca receipts; sending is not Claim, agent acceptance, or completion.
 - **Work across hosts:** local and explicitly mapped SSH projects, host availability, and timestamped offline snapshots. The Beads source and target code workspace must share an execution host. Unmapped paired hosts stay visible but unsupported.
@@ -63,13 +64,7 @@ Development requires Orca **1.4.250+**, Node **24+**, and `bd` **1.3.2** on the 
 
 See the [implementation/acceptance matrix and preserved decisions](docs/product-scope.md), [workflow contract](docs/workflow.md), and [verification record](docs/verification.md).
 
-To try the tested **source preview**, use the same Git URL installation flow with this pinned commit. This is not the stable release or full Q1–Q24 acceptance; existing-session handoff remains disabled.
-
-```text
-https://github.com/Roflochinsky/beads-orca#035d4a2a2448439a6127f2a5ad03cc6b36fd8963
-```
-
-[View the unreleased handoff preview in native Orca](docs/images/native-handoff-unreleased.png). This genuine 1301×900 capture uses synthetic tasks and the unmodified final bundle, without the test-only launch adapter; it does not show an agent launch.
+[View the handoff preview in native Orca](docs/images/native-handoff-unreleased.png). This genuine 1301×900 capture uses synthetic tasks and the release implementation without the test-only launch adapter; it does not show an agent launch.
 
 ## Development
 

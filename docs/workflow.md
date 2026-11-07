@@ -1,6 +1,6 @@
 # Workflow service contract
 
-**Local 0.2.0 source is UNRELEASED; public stable remains v0.1.2.** This is the implemented service contract, not proof of real model execution or full Q1–Q24 acceptance. Existing-session dispatch remains blocked by the native idle-only requirement below. See the [acceptance matrix](product-scope.md) and [observed evidence](verification.md).
+**Release: 0.2.0.** The owner explicitly requested publication with the documented limitations. This service contract is not proof of real model execution or full Q1–Q24 acceptance. Existing-session dispatch remains blocked by the native idle-only requirement below. See the [acceptance matrix](product-scope.md) and [observed evidence](verification.md).
 
 `src/orca/workflow.ts` supplies the worker-owned `WorkflowService(host, access, library)` instance. `WorkflowInputs`, `WorkflowResults`, and the discriminated `WorkflowRequest` are exported from `src/orca/workflow-types.ts`. All project/target inputs are **Project.id**, not filesystem paths or native CLI selectors. The service resolves the registered native workspace and execution host itself.
 

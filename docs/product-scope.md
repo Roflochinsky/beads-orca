@@ -1,14 +1,14 @@
 # Beads for Orca: implementation, acceptance, and approved scope
 
-**Public stable: v0.1.2. Published source preview: 0.2.0 UNRELEASED.** The owner approved Q1–Q24, including all third-round recommendations. Implemented source is published in `feat/approved-orca-workflows`; Ubuntu/macOS CI and Linux public Git installation passed. Implementation is not full acceptance or a stable release. **Native atomic idle-only dispatch to an existing session remains an unwaived upstream blocker.**
+**Release: v0.2.0.** The owner approved Q1–Q24 and subsequently explicitly requested publication and installation with the documented limitation. Publication is authorized; full product acceptance is not implied. **Native atomic idle-only dispatch to an existing session remains an upstream blocker and is disabled.**
 
 ## Implementation / acceptance matrix
 
-This matrix describes unreleased source. Linux evidence is recorded in [verification](verification.md), not inferred from implementation. Automated checks passed: 65 tests, real-`bd` smoke, typecheck/build, package/resource checks and the UI detector. Native and real-SSH observations are separated from the synthetic launch boundary. “Implemented” does not mean observed model execution. Historical decisions below are preserved in Russian.
+This matrix describes 0.2.0. Evidence is recorded in [verification](verification.md), not inferred from implementation. Automated checks passed: 65 tests, real-`bd` smoke, typecheck/build, package/resource checks and the UI detector. Native and real-SSH observations are separated from the synthetic launch boundary. “Implemented” does not mean observed model execution. Historical decisions below are preserved in Russian.
 
-| Approved decisions | Unreleased implementation / acceptance criterion | Observed evidence and outstanding acceptance |
+| Approved decisions | Implementation / acceptance criterion | Observed evidence and outstanding acceptance |
 | --- | --- | --- |
-| Q1–Q3 / first-round decisions | Orca-only delivery, MIT, English-primary/Russian-secondary public copy; explicit existing/new CLI-session scope, filters/history/blockers and remote support retained | Stable v0.1.2 public installation is historical evidence, not installation of 0.2.0. No release/tag or full-scope sign-off |
+| Q1–Q3 / first-round decisions | Orca-only delivery, MIT, English-primary/Russian-secondary public copy; explicit existing/new CLI-session scope, filters/history/blockers and remote support retained | Source-preview installation and Ubuntu/macOS CI passed. Owner authorized the 0.2.0 release with the existing-session limitation, not full-scope sign-off |
 | Q4, Q14 | Cross-project selection, explicitly split groups with one source Beads project and target workspace/recipient each; no automatic scheduler | Native panel task selection/preview observed. Source and target must share an execution host; no cross-host credentials or database copying |
 | Q5 | Internal dependencies remain ordered by live Beads readiness; external blockers block implementation unless tasks change or research is explicitly selected | Native blocked implementation preview disabled Send; research preview enabled Send. No actual dispatch in that observation |
 | Q6, Q15, Q24 | Distinct declared actor per handoff, Claim-before-work instructions, preserve ownership and continue only independent ready work | Prompt/contract implemented; real-bd manual Claim exercised. Executor compliance is not enforced or observed with a real model |
@@ -64,9 +64,9 @@ The following recommendations remain accepted; historical proposal wording is no
 > **Your Beads board. Inside Orca.**
 > See what's ready, follow dependencies, and update tasks without leaving your workspace.
 
-Стабильный v0.1.2 — доска и таблица Beads внутри Orca: поиск, фильтры, зависимости, редактирование задач, комментарии, Claim/Close/Reopen и guarded Close → Undo. Данные и правила готовности остаются в Beads. Это плагин, не отдельный редактор и не Electron-приложение.
+Версия 0.2.0 сохраняет доску и таблицу Beads внутри Orca: поиск, фильтры, зависимости, редактирование задач, комментарии, Claim/Close/Reopen и guarded Close → Undo. Данные и правила готовности остаются в Beads. Это плагин, не отдельный редактор и не Electron-приложение.
 
-В локальных unreleased-исходниках 0.2.0 добавлены handoff/remote/context/history-сценарии. Их реализация и оставшиеся критерии приёмки перечислены в матрице выше; безопасная передача существующей сессии заблокирована upstream.
+В 0.2.0 добавлены handoff/remote/context/history-сценарии. Их реализация и оставшиеся критерии приёмки перечислены в матрице выше; безопасная передача существующей сессии заблокирована upstream.
 
 ## Публичная поставка и README
 
@@ -77,7 +77,7 @@ The following recommendations remain accepted; historical proposal wording is no
 5. Снять настоящие board/table/detail поверхности на демонстрационном Beads-проекте. Пометить демонстрационные данные; не публиковать пользовательские задачи или приватные пути.
 6. Указать требования к Orca и bd, разрешения trusted worker, реальные ограничения и ссылку на проверенный release.
 7. Применить согласованную MIT-лицензию с сохранением лицензий сторонних материалов. Репозиторий открыт; публичная установка проверяется отдельно от смены видимости.
-8. Разделять стабильный выпуск, реализованные unreleased-возможности и оставшиеся критерии приёмки; исторический Approved roadmap больше не описывает всё рабочее дерево.
+8. Разделять опубликованные возможности и оставшиеся критерии приёмки; выпуск сам по себе не означает полное выполнение Q1–Q24.
 
 ## Согласованный сценарий: передача выбранных задач
 
@@ -133,7 +133,7 @@ Host API 1.3, pluginApi 1:
 - `agent.launch` принимает workspaceId, agent и prompt; запускает CLI в новом терминале. Описанный контракт не обещает structured chat и не принимает model/effort.
 - `terminal.sendText` возвращает accepted. Это не доказательство выполнения поручения.
 - `editor.open` открывает файл workspace; `workspace.open` показывает workspace. Для этих методов требуется workspace:write.
-- Unreleased source запрашивает расширенные host-capabilities, включая private storage, workspace/editor и agent/terminal operations; точный список — в [manifest](../orca-plugin.json). Исторический v0.1.2 имел только workspace:read и settings:own. Trusted worker в обоих случаях не является песочницей.
+- Версия 0.2.0 запрашивает расширенные host-capabilities, включая private storage, workspace/editor и agent/terminal operations; точный список — в [manifest](../orca-plugin.json). Исторический v0.1.2 имел только workspace:read и settings:own. Trusted worker в обоих случаях не является песочницей.
 - Публичный discovery требует корректного репозитория и metadata. Историческая Git-установка v0.1.2 проверена отдельно; dev load 0.2.0 не подтверждает новую публичную установку.
 - Фильтр только локальных workspace относился к v0.1.2. Сейчас `ProjectAccess` исполняет native bd локально или через явно настроенный системный SSH, не подменяя remote-путь локальным. Открытие remote workspace или запуск там агента по-прежнему не доказывают доступ к его базе без этого транспорта.
 
@@ -165,7 +165,7 @@ Host API 1.3, pluginApi 1:
 
 Рекомендация: иметь обзор подключённых проектов с группировкой по хосту и отдельный режим текущего workspace. Везде явно показывать проект, хост и доступность данных. Читать и изменять Beads на хосте соответствующего проекта; совпадающий локальный путь не является заменой удалённого проекта.
 
-Это продуктовый контракт. В unreleased-исходниках есть явный SSH-транспорт; observed evidence и неподтверждённый paired/macOS parity разделены в матрице выше.
+Это продуктовый контракт. В 0.2.0 есть явный SSH-транспорт; observed evidence и неподтверждённый paired/macOS UI parity разделены в матрице выше.
 
 ### Q9. Что показывать после обрыва связи?
 
@@ -191,7 +191,7 @@ Host API 1.3, pluginApi 1:
 
 ## Граница реализации
 
-Продуктовые ветви согласованы. Local/SSH transport, native worktree и workflow реализованы в unreleased-исходниках, но полный scope нельзя объявлять принятым без native idle-only gate и оставшихся проверок из матрицы.
+Продуктовые ветви согласованы. Local/SSH transport, native worktree и workflow реализованы в 0.2.0, но полный scope нельзя объявлять принятым без native idle-only gate и оставшихся проверок из матрицы.
 
 Наличие метода запуска агента не доказывает доставку поручения, а наличие удалённого терминала не доказывает корректный транспорт Beads. Неподтверждённые возможности не превращаются в обещания README.
 
@@ -233,7 +233,7 @@ Host API 1.3, pluginApi 1:
 
 ### Q21. Большой контекст и отчёт передаются через явные артефакты поручения?
 
-Рекомендация: при превышении ограничения prompt использовать отдельный файл контекста на целевом хосте и короткую инструкцию агенту прочитать его. До отправки показать состав и расположение. Получать отчёт с идентификаторами поручения и задач в отдельный файл, а не угадывать его по терминальному тексту. Эти файлы не коммитятся автоматически и не копируют всю личную историю. Их жизненный цикл и явное удаление должны быть видимыми; очистка не удаляет рабочие изменения агента. Транспорт реализован в unreleased source; реальный model/report round trip ещё не подтверждён.
+Рекомендация: при превышении ограничения prompt использовать отдельный файл контекста на целевом хосте и короткую инструкцию агенту прочитать его. До отправки показать состав и расположение. Получать отчёт с идентификаторами поручения и задач в отдельный файл, а не угадывать его по терминальному тексту. Эти файлы не коммитятся автоматически и не копируют всю личную историю. Их жизненный цикл и явное удаление должны быть видимыми; очистка не удаляет рабочие изменения агента. Транспорт реализован в 0.2.0; реальный model/report round trip ещё не подтверждён.
 
 ### Q22. Допускается явная настройка remote-доступа вне авторизации Orca?
 
