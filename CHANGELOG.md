@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.3 — 2026-11-07
+
+- Added independent epic-list filters for raw Beads status, priority and assignee, including Unassigned, alongside title/ID search.
+- Kept the selected epic visible when it falls outside the list filters, with an explicit notice. Resetting epic filters does not change task filters or selection; changing projects clears the epic-list criteria.
+- Added matching/total epic counts and accessible collapsible controls for desktop and compact panels.
+- Replaced the corner-aligned no-results message with a centered full-content-area state and explicit reset/show-all actions, including recovery for closed-only projects.
+- Prevented compact filter sections from overlapping task navigation and kept view counts readable at narrow panel widths.
+
 ## 0.2.2 — 2026-11-07
 
 - Moved New issue into the workspace sidebar, with one visible creation action and the existing keyboard shortcut.

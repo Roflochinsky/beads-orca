@@ -10,12 +10,12 @@
 
 ## Install the stable release
 
-Current release: **v0.2.2**. Install the native plugin directly from Git; no source build or development link is needed. Existing-session handoff remains disabled. Community-catalog discovery is separate and may require review.
+Current release: **v0.2.3**. Install the native plugin directly from Git; no source build or development link is needed. Existing-session handoff remains disabled. Community-catalog discovery is separate and may require review.
 
 In Orca, open **Settings → Plugins → Add plugin → From Git URL** and enter:
 
 ```text
-https://github.com/Roflochinsky/beads-orca#v0.2.2
+https://github.com/Roflochinsky/beads-orca#v0.2.3
 ```
 
 Alternatively, use the [Orca community catalog](https://onorca.dev/plugins/roflochinsky.beads?catalog=community) once listed. Check the [listing status](https://www.onorca.dev/plugins/roflochinsky/beads-orca) if it is not available there; Git installation does not require a community listing.
@@ -42,6 +42,14 @@ Choose a project by its workspace, host and full path in the project picker. Ide
 | Table | Issue details |
 | --- | --- |
 | [![Sortable table of demo issues](docs/images/table.png)](docs/images/table.png) | [![Demo issue details and dependencies](docs/images/detail.png)](docs/images/detail.png) |
+
+## New in 0.2.3
+
+Use **Epics → Filters** to narrow the epic list by status, priority and assignee; search still matches titles and IDs. Status is the epic's own Beads status, not a calculation from its children.
+
+Epic-list filters do not change the task list. A selected epic outside the filters stays visible with a notice. **Reset** clears only the epic-list criteria, which also reset when switching projects. These navigation controls are session-local, separate from saved task filters.
+
+No matching tasks now show a centered message across the content area, with **Reset task filters** or **Show all issues** to recover. The controls remain usable in compact panels.
 
 ## New in 0.2.2
 

@@ -126,6 +126,10 @@ export function mount(root: HTMLElement, transport: Transport): void {
   let showClosed = false;
   let epicFilter: FilterCriteria['epic'];
   let epicSearch = '';
+  let epicStatus = '';
+  let epicPriority = '';
+  let epicAssignee = '';
+  let epicFiltersExpanded = false;
   let filtersExpanded = false;
   let scope: { projectNames: string[]; hostNames: string[] } | null = null;
   let createOpen = false;
@@ -443,7 +447,10 @@ export function mount(root: HTMLElement, transport: Transport): void {
   function boardContent(): string {
     const issues = filtered();
     if (!allIssues().length) return `<div class="empty-state"><h2>No issues yet</h2><p>${offline() ? 'This saved snapshot contains no issues.' : 'Create the first issue in this project to start the board.'}</p>${offline() ? '' : createButton()}</div>`;
-    if (!issues.length) return `<div class="empty-state"><h2>No matching issues</h2><p>Try another search or clear the filters.</p><button class="btn btn--outlined" data-action="clear-filters" type="button">Clear filters</button></div>`;
+    if (!issues.length) {
+      const narrowed = !!(query.trim() || typeFilter || priorityFilter || assigneeFilter || epicFilter);
+      return `<div class="empty-state empty-state--no-results" role="status"><div class="empty-state__content"><span class="empty-state__icon">${icon('search')}</span><h2>${narrowed ? 'No issues match these filters' : view === 'all' ? 'No open issues' : `No ${escapeHtml(groupNames[view].toLocaleLowerCase())} issues`}</h2><p>${narrowed ? 'Try a different search or reset the task filters to see more issues.' : view === 'all' ? 'This project only has closed issues. Show all issues to include them.' : 'There are no issues in this view. Choose another status or return to All issues.'}</p><div class="empty-state__actions">${narrowed ? '<button class="btn btn--primary" data-action="clear-filters" type="button">Reset task filters</button>' : ''}${!narrowed || view !== 'all' ? `<button class="btn ${narrowed ? 'btn--outlined' : 'btn--primary'}" data-action="show-all-issues" type="button">Show all issues</button>` : ''}</div></div></div>`;
+    }
     if (view !== 'all' || layout === 'table') return tableContent(issues);
     return `<div class="board" aria-label="Issues by status">${groupOrder.filter((group) => (group !== 'other' || issues.some((issue) => groupOf(issue) === group)) && (showClosed || group !== 'closed')).map((group) => {
       const items = issues.filter((issue) => groupOf(issue) === group);
@@ -460,18 +467,58 @@ export function mount(root: HTMLElement, transport: Transport): void {
     return `<div class="filters${filtersExpanded ? ' filters--expanded' : ''}"><button type="button" class="btn btn--outlined btn--sm filters__toggle" data-action="toggle-filters" aria-expanded="${pressed(filtersExpanded)}" aria-controls="issue-filters">Filters${activeFilters ? ` (${activeFilters})` : ''}${icon('arrow_drop_down')}</button><div id="issue-filters" class="filter-bar${filtersExpanded ? ' filter-bar--expanded' : ''}" aria-label="Filters"><label><span class="visually-hidden">Type</span><select data-change="type" data-focus="type" aria-label="Filter by type"><option value="">All types</option>${issueTypes.map((type) => `<option value="${escapeHtml(type)}"${selected(typeFilter, type)}>${escapeHtml(type)}</option>`).join('')}</select></label><label><span class="visually-hidden">Priority</span><select data-change="priority" data-focus="priority" aria-label="Filter by priority"><option value="">All priorities</option>${[0, 1, 2, 3, 4].map((value) => `<option value="${value}"${selected(priorityFilter, String(value))}>P${value}</option>`).join('')}</select></label><label><span class="visually-hidden">Assignee</span><select data-change="assignee" data-focus="assignee" aria-label="Filter by assignee"><option value="">All assignees</option>${assignees.map((assignee) => `<option value="${escapeHtml(assignee)}"${selected(assigneeFilter, assignee)}>${escapeHtml(assignee)}</option>`).join('')}</select></label>${view === 'all' ? `<label class="check"><input type="checkbox" data-change="closed"${showClosed ? ' checked' : ''}> Include closed</label>` : view === 'closed' ? '<span class="muted">Closed issues are always visible here</span>' : ''}<button class="btn btn--text btn--sm" type="button" data-action="clear-filters">Clear filters</button><span class="filter-bar__spacer"></span><span class="muted">${snapshot ? `${filtered().length} shown` : 'Issues not loaded'}${taskPool.size ? ` · ${taskPool.size} selected${hiddenSelection ? ` · ${hiddenSelection} hidden by filters or project` : ''}` : ''}</span>${taskPool.size ? '<button class="btn btn--text btn--sm" type="button" data-action="clear-pool">Clear selection</button>' : ''}</div></div>`;
   }
 
+  function resetEpicListFilters(): void {
+    epicSearch = ''; epicStatus = ''; epicPriority = ''; epicAssignee = '';
+  }
+
   function rail(): string {
     const groups: Array<Group | 'all'> = ['all', 'ready', 'active', 'blocked', 'closed', 'deferred'];
     if (view === 'other' || allIssues().some((issue) => groupOf(issue) === 'other')) groups.push('other');
     const project = projects.find((item) => item.id === projectId);
     const epicValue = epicFilter ? epicFilter.id === null ? 'none' : `id:${epicFilter.id}` : 'all';
+    const epics = model?.epics || [];
     const needle = epicSearch.trim().toLocaleLowerCase();
-    const matches = (model?.epics || []).filter((epic) => `${epic.id} ${epic.title}`.toLocaleLowerCase().includes(needle));
+    const matches = epics.filter((epic) => `${epic.id} ${epic.title}`.toLocaleLowerCase().includes(needle)
+      && (!epicStatus || epic.status === epicStatus)
+      && (!epicPriority || String(epic.priority) === epicPriority)
+      && (!epicAssignee || (epicAssignee === 'unassigned' ? !epic.assignee : `name:${epic.assignee}` === epicAssignee)));
     const shown = matches.slice(0, 50);
     const selectedEpic = epicFilter?.id ? byId(epicFilter.id) : undefined;
-    const options = selectedEpic && !shown.some((epic) => epic.id === selectedEpic.id) ? [selectedEpic, ...shown] : shown;
-    const epicOptions = `<option value="all"${selected(epicValue, 'all')}>All epics</option><option value="none"${selected(epicValue, 'none')}>No epic</option>${options.map((epic) => `<option value="id:${escapeHtml(epic.id)}"${selected(epicValue, `id:${epic.id}`)}>${escapeHtml(epic.title)} · ${escapeHtml(epic.id)}</option>`).join('')}`;
-    return `<nav class="rail" aria-label="Workspace"><div class="rail__workspace"><span class="rail__glyph">${escapeHtml((project ? projectBasename(project) : 'B').slice(0, 2).toLocaleLowerCase())}</span><div>${projectSelect()}</div></div><div class="rail__create">${createButton()}</div><label class="rail__view"><span class="visually-hidden">Issue view</span><select data-change="view" data-focus="view" aria-label="Issue view">${groups.map((group) => `<option value="${group}"${selected(view, group)}>${group === 'all' ? 'All issues' : escapeHtml(groupNames[group])}</option>`).join('')}</select></label><div class="rail__mobile-epics"><label><span class="visually-hidden">Search epics</span><input type="search" data-input="epic-search" data-focus="epic-search-mobile" placeholder="Search epics" aria-label="Search epics" value="${escapeHtml(epicSearch)}"></label><label><span class="visually-hidden">Epic</span><select data-change="epic" data-focus="epic-mobile" aria-label="Epic">${epicOptions}</select></label></div><h2 class="rail__heading">Views</h2>${groups.map((group) => `<button type="button" class="rail__item" data-action="view" data-value="${group}" aria-current="${pressed(view === group)}">${group === 'all' ? icon('view_kanban') : bead(group)}<span>${group === 'all' ? 'All issues' : escapeHtml(groupNames[group])}</span><span class="rail__count">${snapshot ? count(group) : '—'}</span></button>`).join('')}<div class="rail__epics"><h2 class="rail__heading">Epics</h2><label class="rail__epic-search"><span class="visually-hidden">Search epics</span><input type="search" data-input="epic-search" data-focus="epic-search" placeholder="Search epics" aria-label="Search epics" value="${escapeHtml(epicSearch)}"></label><button class="rail__item rail__item--epic" type="button" data-action="epic" data-value="all" aria-current="${pressed(epicValue === 'all')}">${icon('account_tree')}<span>All epics</span></button><button class="rail__item rail__item--epic" type="button" data-action="epic" data-value="none" aria-current="${pressed(epicValue === 'none')}">${icon('account_tree')}<span>No epic</span></button>${shown.map((epic) => `<button class="rail__item rail__item--epic" type="button" data-action="epic" data-value="id:${escapeHtml(epic.id)}" aria-current="${pressed(epicValue === `id:${epic.id}`)}" title="${escapeHtml(`${epic.title} · ${epic.id}`)}">${icon('account_tree')}<span>${escapeHtml(epic.title)} <small>${escapeHtml(epic.id)}</small></span></button>`).join('')}${matches.length > shown.length ? `<p class="muted rail__epic-empty">${matches.length - shown.length} more; refine the search.</p>` : !shown.length ? '<p class="muted rail__epic-empty">No matching epics.</p>' : ''}</div></nav>`;
+    const selectedOutside = !!selectedEpic && !matches.includes(selectedEpic);
+    const options = selectedEpic && !shown.includes(selectedEpic) ? [selectedEpic, ...shown] : shown;
+    const active = Number(!!epicStatus) + Number(!!epicPriority) + Number(!!epicAssignee);
+    const assignees = [...new Set(epics.map((epic) => epic.assignee).filter(Boolean))].sort();
+    const statusLabels: Record<string, string> = { open: 'Open', in_progress: 'In progress', blocked: 'Blocked', deferred: 'Deferred', closed: 'Closed' };
+    const statuses = [...new Set([...Object.keys(statusLabels), ...epics.map((epic) => epic.status)])];
+    const epicOptions = `<option value="all"${selected(epicValue, 'all')}>All epics</option><option value="none"${selected(epicValue, 'none')}>No epic</option>${options.map((epic) => `<option value="id:${escapeHtml(epic.id)}"${selected(epicValue, `id:${epic.id}`)}>${escapeHtml(epic.title)} · ${escapeHtml(epic.id)}${selectedOutside && epic === selectedEpic ? ' (outside filters)' : ''}</option>`).join('')}`;
+    return `<nav class="rail" aria-label="Workspace">
+      <div class="rail__workspace"><span class="rail__glyph">${escapeHtml((project ? projectBasename(project) : 'B').slice(0, 2).toLocaleLowerCase())}</span><div>${projectSelect()}</div></div>
+      <div class="rail__create">${createButton()}</div>
+      <label class="rail__view"><span class="visually-hidden">Issue view</span><select data-change="view" data-focus="view" aria-label="Issue view">${groups.map((group) => `<option value="${group}"${selected(view, group)}>${group === 'all' ? 'All issues' : escapeHtml(groupNames[group])}</option>`).join('')}</select></label>
+      <h2 class="rail__heading">Views</h2>
+      ${groups.map((group) => `<button type="button" class="rail__item" data-action="view" data-value="${group}" aria-current="${pressed(view === group)}">${group === 'all' ? icon('view_kanban') : bead(group)}<span>${group === 'all' ? 'All issues' : escapeHtml(groupNames[group])}</span><span class="rail__count">${snapshot ? count(group) : '—'}</span></button>`).join('')}
+      <section class="rail__epics" aria-label="Epics">
+        <div class="rail__epic-heading"><h2>Epics</h2><button class="btn btn--text btn--sm" type="button" data-action="toggle-epic-filters" data-focus="toggle-epic-filters" aria-label="Filter epic list${active ? `, ${active} active` : ''}" aria-expanded="${pressed(epicFiltersExpanded)}" aria-controls="epic-list-filters">Filters${active ? ` · ${active}` : ''}${icon('arrow_drop_down')}</button></div>
+        <div class="rail__epic-controls">
+          <label class="rail__epic-search"><span class="visually-hidden">Search epics</span><input type="search" data-input="epic-search" data-focus="epic-search" placeholder="Search epics" aria-label="Search epics" value="${escapeHtml(epicSearch)}"></label>
+          <label class="rail__epic-picker"><span class="visually-hidden">Epic</span><select data-change="epic" data-focus="epic-mobile" aria-label="Epic">${epicOptions}</select></label>
+        </div>
+        <div class="epic-filters" id="epic-list-filters"${epicFiltersExpanded ? '' : ' hidden'}>
+          <label>Status<select data-change="epic-status" data-focus="epic-status" aria-label="Epic status"><option value="">All statuses</option>${statuses.map((status) => `<option value="${escapeHtml(status)}"${selected(epicStatus, status)}>${escapeHtml(statusLabels[status] || status)}</option>`).join('')}</select></label>
+          <label>Priority<select data-change="epic-priority" data-focus="epic-priority" aria-label="Epic priority"><option value="">All priorities</option>${[0, 1, 2, 3, 4].map((value) => `<option value="${value}"${selected(epicPriority, String(value))}>P${value}</option>`).join('')}</select></label>
+          <label>Assignee<select data-change="epic-assignee" data-focus="epic-assignee" aria-label="Epic assignee"><option value="">All assignees</option><option value="unassigned"${selected(epicAssignee, 'unassigned')}>Unassigned</option>${assignees.map((name) => `<option value="${escapeHtml(`name:${name}`)}"${selected(epicAssignee, `name:${name}`)}>${escapeHtml(name)}</option>`).join('')}</select></label>
+          <p>Only filters the epic list, not its tasks.</p>
+        </div>
+        <div class="rail__epic-meta"><span role="status">${snapshot ? `${matches.length} of ${epics.length} epics` : 'Epics not loaded'}</span><button class="btn btn--text btn--sm" type="button" data-action="clear-epic-filters" data-focus="clear-epic-filters" aria-label="Reset epic list filters"${active || epicSearch ? '' : ' disabled'}>Reset</button></div>
+        ${selectedOutside ? '<p class="rail__epic-notice">Selected epic is outside these filters. Its tasks remain displayed.</p>' : ''}
+        <div class="rail__epic-list">
+          <button class="rail__item rail__item--epic" type="button" data-action="epic" data-value="all" aria-current="${pressed(epicValue === 'all')}">${icon('account_tree')}<span>All epics</span></button>
+          <button class="rail__item rail__item--epic" type="button" data-action="epic" data-value="none" aria-current="${pressed(epicValue === 'none')}">${icon('account_tree')}<span>No epic</span></button>
+          ${options.map((epic) => `<button class="rail__item rail__item--epic" type="button" data-action="epic" data-value="id:${escapeHtml(epic.id)}" aria-current="${pressed(epicValue === `id:${epic.id}`)}" title="${escapeHtml(`${epic.title} · ${epic.id}`)}">${icon('account_tree')}<span>${escapeHtml(epic.title)} <small>${escapeHtml(epic.id)}${selectedOutside && epic === selectedEpic ? ' · outside filters' : ''}</small></span></button>`).join('')}
+        </div>
+        ${matches.length > shown.length ? `<p class="muted rail__epic-empty">${matches.length - shown.length} more; refine the search or filters.</p>` : snapshot && !shown.length ? '<p class="muted rail__epic-empty">No matching epics. Change the filters or reset them.</p>' : ''}
+      </section>
+    </nav>`;
   }
 
   function detailActions(issue: Issue): string {
@@ -706,7 +753,7 @@ export function mount(root: HTMLElement, transport: Transport): void {
           const current = projects.filter((project) => project.current);
           projectId = (!projectId && current.length === 1 ? current[0]?.id : undefined) || projects[0]?.id || '';
           snapshot = null; issueIndex.clear(); blockedIds.clear();
-          model = null; modelSignature = ''; modelVersion++; epicFilter = undefined; epicSearch = '';
+          model = null; modelSignature = ''; modelVersion++; epicFilter = undefined; resetEpicListFilters();
           selectedId = ''; detail = null; detailSequence++; commentsSequence++;
           comments = []; commentsError = ''; undoClose = null;
         }
@@ -908,8 +955,8 @@ export function mount(root: HTMLElement, transport: Transport): void {
     root.querySelector<HTMLInputElement>('[data-focus="create-title"]')?.focus();
   }
 
-  function clearFilters(): void {
-    query = ''; typeFilter = ''; priorityFilter = ''; assigneeFilter = ''; epicFilter = undefined; epicSearch = ''; showClosed = false; scope = null;
+  function clearFilters(includeClosed = false): void {
+    query = ''; typeFilter = ''; priorityFilter = ''; assigneeFilter = ''; epicFilter = undefined; showClosed = includeClosed; scope = null;
     render();
   }
   function setEpic(value: string): void {
@@ -951,7 +998,7 @@ export function mount(root: HTMLElement, transport: Transport): void {
     if (!project || id === projectId) return;
     if (!inScope(project, scope)) { actionError = 'This project is outside the saved filter scope. Clear filters to view it.'; render(); return; }
     projectId = id; snapshot = null; issueIndex.clear(); blockedIds.clear();
-    model = null; modelSignature = ''; modelVersion++; epicSearch = ''; if (!preserveEpic) epicFilter = undefined;
+    model = null; modelSignature = ''; modelVersion++; resetEpicListFilters(); if (!preserveEpic) epicFilter = undefined;
     loadingSnapshot = true; connectionLost = false; selectedId = ''; detail = null; detailSequence++; commentsSequence++;
     comments = []; commentsError = ''; commentsLoading = false; undoClose = null;
     loadError = ''; actionError = ''; if (clearQuery && !scope) query = ''; render(); void refresh();
@@ -1055,6 +1102,9 @@ export function mount(root: HTMLElement, transport: Transport): void {
       case 'dismiss-error': actionError = ''; render(); break;
       case 'toggle-filters': filtersExpanded = !filtersExpanded; render(); break;
       case 'clear-filters': clearFilters(); break;
+      case 'show-all-issues': view = 'all'; clearFilters(true); break;
+      case 'toggle-epic-filters': epicFiltersExpanded = !epicFiltersExpanded; render(); break;
+      case 'clear-epic-filters': resetEpicListFilters(); render(); break;
       case 'clear-pool': taskPool.clear(); render(); break;
       case 'layout': if (view === 'all' && (target.dataset.value === 'board' || target.dataset.value === 'table')) { layout = target.dataset.value; render(); } break;
       case 'spotlight': spotlightOn = !spotlightOn; render(); break;
@@ -1088,6 +1138,9 @@ export function mount(root: HTMLElement, transport: Transport): void {
     } else if (change === 'type') { typeFilter = target.value; render(); }
     else if (change === 'view' && ['all', ...groupOrder].includes(target.value)) { view = target.value as Group | 'all'; render(); }
     else if (change === 'epic') setEpic(target.value);
+    else if (change === 'epic-status') { epicStatus = target.value; render(); }
+    else if (change === 'epic-priority') { epicPriority = target.value; render(); }
+    else if (change === 'epic-assignee') { epicAssignee = target.value; render(); }
     else if (change === 'priority') { priorityFilter = target.value; render(); }
     else if (change === 'assignee') { assigneeFilter = target.value; render(); }
     else if (change === 'closed' && target instanceof HTMLInputElement) { showClosed = target.checked; render(); }

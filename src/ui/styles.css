@@ -181,6 +181,14 @@ kbd { display: inline-flex; align-items: center; justify-content: center; min-wi
 .empty-state details, .banner details { margin-top: 8px; max-width: 100%; }
 .empty-state summary, .banner summary { cursor: pointer; color: var(--color-ink); font-size: 12px; }
 .empty-state details p, .banner details p { max-height: 140px; margin-top: 4px; overflow: auto; overflow-wrap: anywhere; white-space: pre-wrap; }
+.empty-state--no-results { align-items: center; text-align: center; padding: clamp(24px, 5vw, 64px); }
+.empty-state__content { display: flex; flex-direction: column; align-items: center; gap: 16px; width: min(100%, 420px); margin: auto; }
+.empty-state__icon { display: grid; place-items: center; width: 64px; height: 64px; border-radius: 16px; background: var(--color-subtle); color: var(--color-ink-2); }
+.empty-state__icon .icon { width: 32px; height: 32px; }
+.empty-state__content h2 { font-size: clamp(20px, 2vw, 24px); line-height: 1.3; text-wrap: balance; }
+.empty-state__content p { line-height: 1.6; text-wrap: pretty; }
+.empty-state__actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; }
+.empty-state__actions .btn { margin: 4px 0 0; min-height: 40px; white-space: normal; }
 .banner { display: flex; align-items: center; gap: 12px; margin: 0 24px 12px; padding: 12px; border: 1px solid var(--color-line-strong); border-radius: 12px; background: var(--color-surface); }
 .banner > div { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .banner p { color: var(--color-ink-2); font-size: 12px; }
@@ -223,7 +231,7 @@ kbd { display: inline-flex; align-items: center; justify-content: center; min-wi
 .product-section [role="group"] .check { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
 @media (max-width: 480px) { .product-dialog .dialog__row { grid-template-columns: 1fr; gap: 8px; } }
 @media (max-width: 767px) {
-  .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: 56px auto minmax(0, 1fr); grid-template-areas: 'bar' 'rail' 'main'; }
+  .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: 56px max-content minmax(420px, 1fr); grid-template-areas: 'bar' 'rail' 'main'; overflow-y: auto; }
   .app-bar { grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; padding: 0 8px; }
   .brand > span:last-child, .app-bar__actions .btn--text span, .app-bar__actions .btn--primary span, .app-bar__actions .btn--primary kbd { display: none; }
   .app-bar__actions .btn { width: 36px; padding: 0; }
@@ -271,11 +279,21 @@ kbd { display: inline-flex; align-items: center; justify-content: center; min-wi
 .rail__item > span:nth-child(2) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rail__item--epic { padding-left: 18px; }
 .rail__item--epic small { color: var(--color-ink-2); font-size: 11px; font-weight: 400; }
-.rail__epics { display: flex; flex-direction: column; }
-.rail__epic-search { margin: 4px 8px 6px; }
-.rail__epic-search input, .rail__mobile-epics input, .rail__mobile-epics select { width: 100%; min-width: 0; height: 32px; padding: 0 8px; border: 1px solid var(--color-line-strong); border-radius: 8px; background: var(--color-surface); }
-.rail__epic-empty { padding: 4px 12px; }
-.rail__mobile-epics { display: none; }
+.rail__epics { display: flex; flex-direction: column; min-width: 0; margin-top: 12px; }
+.rail__epic-heading, .rail__epic-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 8px; }
+.rail__epic-heading h2 { font-size: 12px; color: var(--color-ink-2); }
+.rail__epic-heading .btn, .rail__epic-meta .btn { padding-inline: 6px; }
+.rail__epic-controls { display: flex; gap: 8px; min-width: 0; padding: 4px 8px; }
+.rail__epic-search { flex: 1; min-width: 0; }
+.rail__epics input, .rail__epics select { width: 100%; min-width: 0; height: 36px; padding: 0 8px; border: 1px solid var(--color-line-strong); border-radius: 8px; background: var(--color-surface); }
+.rail__epic-picker { display: none; }
+.epic-filters { display: grid; gap: 10px; padding: 8px; }
+.epic-filters[hidden] { display: none; }
+.epic-filters label { display: flex; flex-direction: column; gap: 4px; min-width: 0; color: var(--color-ink-2); font-size: 12px; }
+.epic-filters select { color: var(--color-ink); font-size: 13px; }
+.epic-filters p, .rail__epic-meta, .rail__epic-notice { color: var(--color-ink-2); font-size: 12px; line-height: 1.5; }
+.rail__epic-notice { padding: 8px; margin: 4px 8px; border-radius: 8px; background: var(--color-subtle); }
+.rail__epic-empty { padding: 8px 12px; font-size: 12px; line-height: 1.5; }
 .main__title-row { flex-wrap: wrap; gap: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--color-line); }
 .summary { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
 .view-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 36px; padding: 0 12px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--color-ink-2); font-size: 13px; font-weight: 500; white-space: nowrap; }
@@ -326,12 +344,16 @@ kbd { display: inline-flex; align-items: center; justify-content: center; min-wi
   .rail__create { flex: 1 1 100%; margin: 0; }
   .rail__create .btn { width: 100%; min-height: 40px; }
   .rail__view { flex: 1 1 100px; }
-  .rail__mobile-epics { display: flex; flex: 2 1 180px; gap: 6px; min-width: 0; }
-  .rail__mobile-epics label { flex: 1; min-width: 0; }
-  .rail__mobile-epics input, .rail__mobile-epics select { height: 36px; }
-  .rail__epics { display: none; }
+  .rail__epics { flex: 1 1 100%; margin-top: 0; }
+  .rail__epic-heading, .rail__epic-meta { padding-inline: 0; }
+  .rail__epic-controls { padding-inline: 0; flex-wrap: wrap; }
+  .rail__epic-search, .rail__epic-picker { display: block; flex: 1 1 140px; min-width: 0; }
+  .rail__epic-list { display: none; }
+  .epic-filters { grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr)); padding-inline: 0; }
+  .epic-filters p { grid-column: 1 / -1; }
+  .rail__epic-notice { margin-inline: 0; }
   .main__title-row { gap: 8px; }
-  .summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+  .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 145px), 1fr)); width: 100%; }
   .view-button { justify-content: space-between; padding-inline: 10px; }
   .detail__top { margin-inline: -16px; padding-inline: 16px; }
 }
